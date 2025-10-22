@@ -1,1 +1,2 @@
-from . import sale_integration
+# -*- coding: utf-8 -*-
+from . import calculator

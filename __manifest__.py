@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 {
-    "name": "Clocky Sales Integration (Backend Only)",
-    "summary": "Base limpio para integrar Ventas sin Website ni assets",
+    "name": "POS Calculator Basic",
+    "summary": "Calculadora básica para Punto de Venta (sumar, restar, multiplicar)",
     "version": "17.0.1.0.0",
-    "author": "Clocky",
+    "category": "Point of Sale",
+    "author": "Tu Nombre",
     "license": "LGPL-3",
-    "category": "Sales",
-    "depends": ["sale"],  # sin website, sin portal, sin web.assets
+    "depends": ["point_of_sale"],
     "data": [
         "security/ir.model.access.csv",
-        "views/sale_views.xml",
+        "views/calculator_views.xml",
     ],
-    "application": True,
     "installable": True,
+    "application": False,
 }
