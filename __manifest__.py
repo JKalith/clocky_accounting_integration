@@ -11,6 +11,6 @@
         "security/ir.model.access.csv",
         "views/sale_views.xml",
     ],
-    "application": False,
+    "application": True,
     "installable": True,
 }
