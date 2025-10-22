@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <!-- Árbol/Formulario de Clocky logs -->
+  <record id="view_clocky_sale_log_tree" model="ir.ui.view">
+    <field name="name">clocky.sale.log.tree</field>
+    <field name="model">clocky.sale.log</field>
+    <field name="arch" type="xml">
+      <tree>
+        <field name="create_date"/>
+        <field name="level"/>
+        <field name="message"/>
+        <field name="order_id"/>
+      </tree>
+    </field>
+  </record>
+
+  <record id="view_clocky_sale_log_form" model="ir.ui.view">
+    <field name="name">clocky.sale.log.form</field>
+    <field name="model">clocky.sale.log</field>
+    <field name="arch" type="xml">
+      <form string="Log de integración">
+        <sheet>
+          <group>
+            <field name="order_id"/>
+            <field name="level"/>
+            <field name="message"/>
+          </group>
+          <group>
+            <field name="payload" nolabel="1" widget="text"/>
+          </group>
+        </sheet>
+      </form>
+    </field>
+  </record>
+
+  <record id="action_clocky_sale_log" model="ir.actions.act_window">
+    <field name="name">Logs de integración</field>
+    <field name="res_model">clocky.sale.log</field>
+    <field name="view_mode">tree,form</field>
+  </record>
+
+  <!-- Menú bajo Ventas / Pedidos -->
+  <menuitem id="menu_clocky_root"
+            name="Clocky"
+            parent="sale.sale_order_menu"
+            sequence="90"/>
+  <menuitem id="menu_clocky_logs"
+            name="Logs de integración"
+            parent="menu_clocky_root"
+            action="action_clocky_sale_log"
+            sequence="10"/>
+
+  <!-- Extensión de la vista de sale.order -->
+  <record id="view_order_form_clocky_integration" model="ir.ui.view">
+    <field name="name">sale.order.form.clocky.integration</field>
+    <field name="model">sale.order</field>
+    <field name="inherit_id" ref="sale.view_order_form"/>
+    <field name="arch" type="xml">
+      <header position="inside">
+        <button name="action_integration_simulate_send"
+                type="object"
+                string="Enviar a Clocky"
+                class="btn-primary"
+                attrs="{'invisible': [('state','not in',('draft','sent'))]}"/>
+      </header>
+      <sheet position="inside">
+        <group string="Integración" name="clocky_integration_grp">
+          <field name="external_ref"/>
+          <field name="integration_state" widget="statusbar"/>
+          <field name="integration_notes"/>
+        </group>
+      </sheet>
+      <sheet position="after">
+        <div class="oe_button_box" name="button_box">
+          <button name="action_view_clocky_logs"
+                  type="object"
+                  class="oe_stat_button"
+                  icon="fa-file-text-o"
+                  attrs="{'invisible': [('clocky_log_count','=',0)]}">
+            <field name="clocky_log_count" widget="statinfo" string="Logs"/>
+          </button>
+        </div>
+      </sheet>
+    </field>
+  </record>
+</odoo>
