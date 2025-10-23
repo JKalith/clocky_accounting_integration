@@ -6,11 +6,12 @@
     "category": "Accounting/Accounting",
     "author": "James / Clocky",
     "license": "LGPL-3",
-    "depends": ["account"],   # solo contabilidad
+    "depends": ["account", "product"],   # solo contabilidad
 "data": [
     "security/ir.model.access.csv",
     "views/facturar_views.xml",
     "views/account_move_inherit.xml",
+    "views/account_invoice_cabys_view.xml",
 ],
 
 
