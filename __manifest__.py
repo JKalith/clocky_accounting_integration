@@ -7,11 +7,12 @@
     "author": "James / Clocky",
     "license": "LGPL-3",
     "depends": ["account"],   # solo contabilidad
-    "data": [
-        "security/ir.model.access.csv",
-        "views/calculator_views.xml",      # vista del wizard
-        "views/account_move_inherit.xml",  # botón en el header de facturas
-    ],
+"data": [
+    # "views/calculator_views.xml",   # <-- borrar o comentar
+    "views/facturar_views.xml",
+    "views/account_move_inherit.xml",
+],
+
     "installable": True,
     "application": False,
 }
