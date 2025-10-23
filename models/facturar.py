@@ -29,6 +29,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         move = self.env["account.move"].browse(self.env.context.get("active_id"))
         if not move or move._name != "account.move":
             raise UserError(_("Abra una factura para usar 'Facturar'."))
+
         # Cabecera
         res.update({
             "move_id": move.id,
@@ -44,31 +45,55 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             "amount_tax": move.amount_tax,
             "amount_total": move.amount_total,
         })
-        # Líneas en HTML simple (sin JS, solo Python)
+
+        # Utilidad: formateo monetario
+        def fmt(amount):
+            amount = amount or 0.0
+            cur = move.currency_id
+            if cur:
+                if cur.position == 'before':
+                    return f"{cur.symbol} {amount:,.2f}"
+                return f"{amount:,.2f} {cur.symbol}"
+            return f"{amount:,.2f}"
+
+        # Líneas en HTML simple (con CABYS)
         rows = []
         for l in move.invoice_line_ids:
             pname = l.product_id.display_name or (l.name or "")
             taxes = ", ".join(t.name for t in l.tax_ids) or "-"
             cabys = l.cabys or ""
+            qty = l.quantity or 0.0
+            price_unit = l.price_unit or 0.0
+            discount = l.discount or 0.0
+            subtotal = l.price_subtotal or 0.0
+            total = l.price_total or 0.0
+
             rows.append(
                 f"<tr>"
                 f"<td>{pname}</td>"
-                f"<td style='text-align:right'>{l.quantity:g}</td>"
-                f"<td style='text-align:right'>{l.price_unit:,.2f}</td>"
-                f"<td style='text-align:right'>{l.discount or 0:g}%</td>"
+                f"<td style='text-align:right'>{qty:g}</td>"
+                f"<td style='text-align:right'>{fmt(price_unit)}</td>"
+                f"<td style='text-align:right'>{discount:g}%</td>"
                 f"<td>{taxes}</td>"
-                 f"<td>{cabys}</td>"
-                f"<td style='text-align:right'>{l.price_subtotal:,.2f}</td>"
-                f"<td style='text-align:right'>{l.price_total:,.2f}</td>"
+                f"<td>{cabys}</td>"
+                f"<td style='text-align:right'>{fmt(subtotal)}</td>"
+                f"<td style='text-align:right'>{fmt(total)}</td>"
                 f"</tr>"
             )
+
         table = (
-            "<table class='table table-sm o_list_view'>"
+            "<table class='table table-sm o_list_view' style='width:100%; border-collapse:collapse;'>"
             "<thead><tr>"
-            "<th>Producto/Descripción</th><th>Cantidad</th><th>Precio</th>"
-            "<th>Desc.</th><th>Impuestos</th><th>CABYS</th><th>Subtotal</th><th>Total</th>"
+            "<th>Producto/Descripción</th>"
+            "<th style='text-align:right'>Cantidad</th>"
+            "<th style='text-align:right'>Precio</th>"
+            "<th style='text-align:right'>Desc.</th>"
+            "<th>Impuestos</th>"
+            "<th>CABYS</th>"
+            "<th style='text-align:right'>Subtotal</th>"
+            "<th style='text-align:right'>Total</th>"
             "</tr></thead>"
-            f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"7\">Sin líneas</td></tr>'}</tbody>"
+            f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"8\">Sin líneas</td></tr>'}</tbody>"
             "</table>"
         )
         res["lines_html"] = table
@@ -81,7 +106,6 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         if move.state != "draft":
             raise UserError(_("La factura no está en borrador."))
         move.action_post()
-        # Reabrir la factura en su vista form
         action = self.env["ir.actions.actions"]._for_xml_id("account.action_move_out_invoice_type")
         action.update({
             "view_mode": "form",
