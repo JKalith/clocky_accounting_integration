@@ -6,10 +6,11 @@
     "category": "Point of Sale",
     "author": "Tu Nombre",
     "license": "LGPL-3",
-    "depends": ["point_of_sale"],
+    "depends": ["point_of_sale", "account"],
     "data": [
         "security/ir.model.access.csv",
         "views/calculator_views.xml",
+        "views/account_move_inherit.xml",
     ],
     "installable": True,
     "application": False,
