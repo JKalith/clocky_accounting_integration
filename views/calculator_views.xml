@@ -1,24 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-
-    <!-- Botón de Calculadora en el encabezado del formulario de facturas -->
-    <record id="view_move_form_add_calculator_btn" model="ir.ui.view">
-        <field name="name">account.move.form.add.calculator.btn</field>
-        <field name="model">account.move</field>
-        <field name="inherit_id" ref="account.view_move_form"/>
+    <record id="view_accounting_calculator_wizard_form" model="ir.ui.view">
+        <field name="name">accounting.calculator.wizard.form</field>
+        <field name="model">accounting.calculator.wizard</field>
         <field name="arch" type="xml">
-            <!-- Insertamos un botón en el <header>. 
-                 Usamos type="action" llamando a la acción de nuestro wizard -->
-            <xpath expr="//form/header" position="inside">
-                <button
-                    string="Calculadora"
-                    type="action"
-                    name="%(pos_calculator_basic.action_pos_calculator_wizard)d"
-                    class="btn-secondary"
-                    icon="fa-calculator"
-                    groups="account.group_account_invoice"/>
-            </xpath>
+            <form string="Calculadora básica" create="false" edit="true">
+                <group>
+                    <group>
+                        <field name="number_a"/>
+                        <field name="number_b"/>
+                        <field name="operation"/>
+                    </group>
+                    <group>
+                        <field name="result" readonly="1"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_compute" type="object" class="btn-primary" string="Calcular"/>
+                    <button special="cancel" class="btn-secondary" string="Cerrar"/>
+                </footer>
+            </form>
         </field>
     </record>
-
 </odoo>
