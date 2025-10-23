@@ -1,2 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_accounting_calculator_user,access_accounting_calculator_user,model_accounting_calculator_wizard,account.group_account_invoice,1,1,1,0
+access_account_invoice_preview_wizard,access_account_invoice_preview_wizard,model_account_invoice_preview_wizard,account.group_account_invoice,1,1,1,0
