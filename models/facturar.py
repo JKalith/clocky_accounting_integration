@@ -202,8 +202,13 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         move = self.move_id
 
         # 1) Parametrización
-        icp = self.env["ir.config_parameter"].sudo()
-        url = icp.get_param("https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4") or ""
+        icp = self.env["ir.config_parameter"].sudo()    
+
+
+
+       #Cambiar a futuro por esta línea para producción url = icp.get_param("https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4") or "" y ajustar parámetros en sistema
+        url = "https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4"
+
         token = icp.get_param("clocky.facturar_post_token") or ""
         block_on_fail = (icp.get_param("clocky.facturar_block_on_fail") or "").strip() in ("1", "true", "True", "TRUE")
 
