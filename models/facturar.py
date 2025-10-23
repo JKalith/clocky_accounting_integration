@@ -203,7 +203,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
 
         # 1) Parametrización
         icp = self.env["ir.config_parameter"].sudo()
-        url = icp.get_param("clocky.facturar_post_url") or ""
+        url = icp.get_param("https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4") or ""
         token = icp.get_param("clocky.facturar_post_token") or ""
         block_on_fail = (icp.get_param("clocky.facturar_block_on_fail") or "").strip() in ("1", "true", "True", "TRUE")
 
