@@ -18,6 +18,7 @@
           <group>
             <field name="amount_untaxed"/>
             <field name="amount_tax"/>
+            <field name="cabys"/>     
             <field name="amount_total"/>
           </group>
         </group>

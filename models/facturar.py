@@ -49,6 +49,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         for l in move.invoice_line_ids:
             pname = l.product_id.display_name or (l.name or "")
             taxes = ", ".join(t.name for t in l.tax_ids) or "-"
+            cabys = l.cabys or ""
             rows.append(
                 f"<tr>"
                 f"<td>{pname}</td>"
@@ -56,6 +57,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 f"<td style='text-align:right'>{l.price_unit:,.2f}</td>"
                 f"<td style='text-align:right'>{l.discount or 0:g}%</td>"
                 f"<td>{taxes}</td>"
+                 f"<td>{cabys}</td>"
                 f"<td style='text-align:right'>{l.price_subtotal:,.2f}</td>"
                 f"<td style='text-align:right'>{l.price_total:,.2f}</td>"
                 f"</tr>"
@@ -64,7 +66,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             "<table class='table table-sm o_list_view'>"
             "<thead><tr>"
             "<th>Producto/Descripción</th><th>Cantidad</th><th>Precio</th>"
-            "<th>Desc.</th><th>Impuestos</th><th>Subtotal</th><th>Total</th>"
+            "<th>Desc.</th><th>Impuestos</th><th>CABYS</th><th>Subtotal</th><th>Total</th>"
             "</tr></thead>"
             f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"7\">Sin líneas</td></tr>'}</tbody>"
             "</table>"
