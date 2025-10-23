@@ -8,10 +8,11 @@
     "license": "LGPL-3",
     "depends": ["account"],   # solo contabilidad
 "data": [
-    # "views/calculator_views.xml",   # <-- borrar o comentar
+    "security/ir.model.access.csv",
     "views/facturar_views.xml",
     "views/account_move_inherit.xml",
 ],
+
 
     "installable": True,
     "application": False,
