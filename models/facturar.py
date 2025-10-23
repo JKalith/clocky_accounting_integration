@@ -118,60 +118,174 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return res
 
     # ---------- NUEVO: helpers para POST ----------
+    # ------- helpers de extracción segura -------
+
+    def _get_any(self, rec, names):
+        """Devuelve el primer atributo válido de 'rec' en 'names'.
+        Si es many2one retorna .name; si es simple, retorna su valor."""
+        for n in names:
+            if hasattr(rec, n):
+                val = getattr(rec, n)
+                if not val:
+                    continue
+                # many2one -> devolver nombre
+                try:
+                    if hasattr(val, "name"):
+                        return val.name or ""
+                except Exception:
+                    pass
+                return val
+        return ""
+
+    def _cr_address_dict(self, partner):
+        """Arma el bloque de dirección CR (provincia, cantón, distrito, barrio)."""
+        # País (CR)
+        country = partner.country_id.code or partner.country_id.name or "CR"
+
+        province = self._get_any(partner, [
+            "l10n_cr_province_id", "x_province_id", "x_province", "province_id", "state_id", "l10n_cr_province"
+        ])
+        canton = self._get_any(partner, [
+            "l10n_cr_canton_id", "x_canton_id", "x_canton", "l10n_cr_canton"
+        ])
+        district = self._get_any(partner, [
+            "l10n_cr_district_id", "x_district_id", "x_district", "l10n_cr_district"
+        ])
+        neighborhood = self._get_any(partner, [
+            "l10n_cr_neighborhood_id", "x_neighborhood_id", "x_neighborhood", "l10n_cr_neighborhood", "barrio"
+        ])
+
+        other = " ".join(filter(None, [partner.street or "", partner.street2 or "", partner.city or "", partner.zip or ""])).strip()
+
+        return {
+            "country": country or "CR",
+            "province": province or None,
+            "canton": canton or None,
+            "district": district or None,
+            "neighborhood": neighborhood or None,  # (barrio)
+            "other": other,
+        }
+
+    def _payment_info(self, move):
+        """Condición, días y métodos de pago (básico)."""
+        cond = move.invoice_payment_term_id.name if move.invoice_payment_term_id else None
+
+        # días: si hay fechas, usamos diferencia; si no, intentamos con la línea mayor del término
+        term_days = None
+        if move.invoice_date and move.invoice_date_due:
+            term_days = (move.invoice_date_due - move.invoice_date).days
+        elif move.invoice_payment_term_id and move.invoice_payment_term_id.line_ids:
+            term_days = max(move.invoice_payment_term_id.line_ids.mapped("days") or [0])
+
+        # métodos: si usas payment_method_line_id (v16+ en pagos), o deja vacío
+        methods = []
+        if hasattr(move, "payment_method_line_id") and move.payment_method_line_id:
+            methods = [move.payment_method_line_id.name]
+        return {"condition": cond, "term_days": term_days, "methods": methods}
+
+    def _uom_info(self, line):
+        """Nombre y código UoM. Intenta campos habituales de localización CR si existen."""
+        uom = line.product_uom_id
+        name = uom.name if uom else None
+        code = None
+        # posibles campos de código (ajusta si tienes uno específico)
+        for fname in ["l10n_cr_unit_code", "code", "uom_code", "x_uom_code"]:
+            if uom and hasattr(uom, fname) and getattr(uom, fname):
+                code = getattr(uom, fname)
+                break
+        return {"uom_name": name, "uom_code": code}
+
+    # ------- payload enriquecido (reemplaza tu _build_post_payload por este) -------
+
     def _build_post_payload(self, move):
-        """Prepara el payload JSON con cabecera + líneas (incl. CABYS)."""
+        """Payload JSON con cabecera, CR address (provincia/cantón/distrito/barrio),
+        términos de pago, métodos, líneas con CABYS, taxes y UoM."""
         self.ensure_one()
         currency = move.currency_id
+        company_partner = move.company_id.partner_id
+        customer = move.partner_id
+
         payload = {
             "invoice": {
                 "id": move.id,
-                "name": move.name or move.payment_reference or "Borrador",
-                "partner": {
-                    "id": move.partner_id.id,
-                    "name": move.partner_id.display_name or "",
-                    "vat": move.partner_id.vat or "",
-                },
+                "move_type": move.move_type,  # p.ej. out_invoice
+                "name": move.name or move.payment_reference or "/",
+                "state": move.state,
+
                 "journal": {
                     "id": move.journal_id.id,
                     "name": move.journal_id.display_name or "",
                     "code": move.journal_id.code or "",
                 },
                 "currency": {
-                    "id": currency.id if currency else False,
+                    "id": currency.id if currency else 0,
                     "name": currency.name if currency else "",
                     "symbol": currency.symbol if currency else "",
-                    "position": currency.position if currency else "",
+                    "position": currency.position if currency else "before",
                 },
+
                 "dates": {
                     "invoice_date": str(move.invoice_date) if move.invoice_date else None,
                     "invoice_date_due": str(move.invoice_date_due) if move.invoice_date_due else None,
                 },
-                "state": move.state,
+
+                "company": {
+                    "id": move.company_id.id,
+                    "name": move.company_id.name or (company_partner.display_name or ""),
+                    "vat": company_partner.vat or "",
+                    "email": company_partner.email or None,
+                    "phone": company_partner.phone or company_partner.mobile or None,
+                    "address": self._cr_address_dict(company_partner),
+                },
+
+                "partner": {
+                    "id": customer.id,
+                    "name": customer.display_name or "",
+                    "vat": customer.vat or "",
+                    "email": customer.email or None,
+                    "phone": customer.phone or customer.mobile or None,
+                    "address": self._cr_address_dict(customer),
+                },
+
                 "amounts": {
                     "untaxed": float(move.amount_untaxed or 0.0),
                     "tax": float(move.amount_tax or 0.0),
                     "total": float(move.amount_total or 0.0),
                 },
+
+                "payment": self._payment_info(move),
                 "lines": [],
+                "meta": {"source": "odoo", "version": "1.0"},
             }
         }
+
         for line in move.invoice_line_ids:
+            uom = self._uom_info(line)
+            taxes_display = [t.name for t in line.tax_ids] if line.tax_ids else []
+            taxes_ids = [t.id for t in line.tax_ids] if line.tax_ids else []
+
             payload["invoice"]["lines"].append({
                 "id": line.id,
                 "product": {
-                    "id": line.product_id.id or False,
+                    "id": line.product_id.id or 0,
                     "name": line.product_id.display_name or (line.name or ""),
-                    "default_code": line.product_id.default_code or "",
+                    "default_code": line.product_id.default_code or None,
                 },
                 "description": line.name or "",
                 "quantity": float(line.quantity or 0.0),
+                "uom_name": uom["uom_name"],
+                "uom_code": uom["uom_code"],
                 "price_unit": float(line.price_unit or 0.0),
                 "discount": float(line.discount or 0.0),
-                "taxes": [t.name for t in line.tax_ids] if line.tax_ids else [],
-                "cabys": line.cabys or "",
+
+                "cabys": line.cabys or None,
+                "taxes_display": taxes_display,
+                "taxes_ids": taxes_ids,
+
                 "subtotal": float(line.price_subtotal or 0.0),
                 "total": float(line.price_total or 0.0),
             })
+
         return payload
 
     def _http_post(self, url, payload, headers=None, timeout=25):
