@@ -138,32 +138,47 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return ""
 
     def _cr_address_dict(self, partner):
-        """Arma el bloque de dirección CR (provincia, cantón, distrito, barrio)."""
-        country = partner.country_id.code or partner.country_id.name or "CR"
+        """Arma el bloque de dirección CR (provincia, cantón, distrito, barrio),
+        contemplando variantes comunes de campos en la BD."""
+        # País (CR)
+        country = (partner.country_id.code or partner.country_id.name or "CR") if partner.country_id else "CR"
 
+        # Nota:
+        # - province:    state_id / l10n_cr_province_id / province_id / x_province*
+        # - canton:      county_id / l10n_cr_canton_id / canton_id / x_canton*
+        # - district:    district_id / l10n_cr_district_id / x_district*
+        # - neighborhood:neighborhood_id / l10n_cr_neighborhood_id / x_neighborhood* / barrio
         province = self._get_any(partner, [
-            "l10n_cr_province_id", "x_province_id", "x_province", "province_id", "state_id", "l10n_cr_province"
+            "l10n_cr_province_id", "province_id", "state_id", "l10n_cr_province",
+            "x_province_id", "x_province"
         ])
         canton = self._get_any(partner, [
-            "l10n_cr_canton_id", "x_canton_id", "x_canton", "l10n_cr_canton"
+            "county_id", "l10n_cr_canton_id", "canton_id", "l10n_cr_canton",
+            "x_canton_id", "x_canton"
         ])
         district = self._get_any(partner, [
-            "l10n_cr_district_id", "x_district_id", "x_district", "l10n_cr_district"
+            "district_id", "l10n_cr_district_id", "l10n_cr_district",
+            "x_district_id", "x_district"
         ])
         neighborhood = self._get_any(partner, [
-            "l10n_cr_neighborhood_id", "x_neighborhood_id", "x_neighborhood", "l10n_cr_neighborhood", "barrio"
+            "neighborhood_id", "l10n_cr_neighborhood_id", "l10n_cr_neighborhood",
+            "x_neighborhood_id", "x_neighborhood", "barrio"
         ])
 
-        other = " ".join(filter(None, [
-            partner.street or "", partner.street2 or "", partner.city or "", partner.zip or ""
-        ])).strip()
+        # Campos libres de dirección (se mantienen igual)
+        street = partner.street or ""
+        street2 = partner.street2 or ""
+        city = partner.city or ""      # útil si lo usas para "distrito" en algunas bases
+        zip_code = partner.zip or ""
+
+        other = " ".join(filter(None, [street, street2, city, zip_code])).strip()   
 
         return {
             "country": country or "CR",
             "province": province or None,
             "canton": canton or None,
             "district": district or None,
-            "neighborhood": neighborhood or None,
+            "neighborhood": neighborhood or None,  # (barrio)
             "other": other,
         }
 
