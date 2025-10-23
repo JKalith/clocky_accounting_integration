@@ -4,19 +4,20 @@ Title: Invoice Preview Wizard (POST + Post)
 Description:
     Extiende el wizard de vista previa para:
       1) Construir un payload JSON con datos de la factura (cabecera y líneas con CABYS)
-      2) Enviarlo vía HTTP POST a una URL configurable en Parametros del sistema
+      2) Enviarlo vía HTTP POST a una URL configurable en Parámetros del sistema
       3) (Opcional) Registrar el resultado en el chatter de la factura
       4) Contabilizar la factura
 
-Methods:
-    - default_get(fields_list): arma la vista previa (como ya tienes)
-    - _build_post_payload(): construye el JSON con cabecera y líneas
-    - _http_post(url, payload, headers): envía POST con urllib (sin dependencias externas)
-    - action_post_invoice(): envía el POST y luego contabiliza la factura
+Params del sistema (recomendado):
+    - clocky.facturar_post_url
+    - clocky.facturar_post_token        (opcional, se envía como Bearer)
+    - clocky.facturar_block_on_fail     (opcional: '1'/'true' para bloquear si falla)
 """
 
 import json
 import ssl
+import traceback
+from datetime import date, datetime
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -80,7 +81,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         for l in move.invoice_line_ids:
             pname = l.product_id.display_name or (l.name or "")
             taxes = ", ".join(t.name for t in l.tax_ids) or "-"
-            cabys = l.cabys or ""
+            cabys = getattr(l, "cabys", "") or ""
             qty = l.quantity or 0.0
             price_unit = l.price_unit or 0.0
             discount = l.discount or 0.0
@@ -117,8 +118,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         res["lines_html"] = table
         return res
 
-    # ---------- NUEVO: helpers para POST ----------
-    # ------- helpers de extracción segura -------
+    # ---------- helpers para POST ----------
 
     def _get_any(self, rec, names):
         """Devuelve el primer atributo válido de 'rec' en 'names'.
@@ -128,8 +128,8 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 val = getattr(rec, n)
                 if not val:
                     continue
-                # many2one -> devolver nombre
                 try:
+                    # Si es registro (many2one), devolver su nombre
                     if hasattr(val, "name"):
                         return val.name or ""
                 except Exception:
@@ -139,7 +139,6 @@ class AccountInvoicePreviewWizard(models.TransientModel):
 
     def _cr_address_dict(self, partner):
         """Arma el bloque de dirección CR (provincia, cantón, distrito, barrio)."""
-        # País (CR)
         country = partner.country_id.code or partner.country_id.name or "CR"
 
         province = self._get_any(partner, [
@@ -155,32 +154,55 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             "l10n_cr_neighborhood_id", "x_neighborhood_id", "x_neighborhood", "l10n_cr_neighborhood", "barrio"
         ])
 
-        other = " ".join(filter(None, [partner.street or "", partner.street2 or "", partner.city or "", partner.zip or ""])).strip()
+        other = " ".join(filter(None, [
+            partner.street or "", partner.street2 or "", partner.city or "", partner.zip or ""
+        ])).strip()
 
         return {
             "country": country or "CR",
             "province": province or None,
             "canton": canton or None,
             "district": district or None,
-            "neighborhood": neighborhood or None,  # (barrio)
+            "neighborhood": neighborhood or None,
             "other": other,
         }
 
     def _payment_info(self, move):
-        """Condición, días y métodos de pago (básico)."""
+        """Condición, días y métodos de pago (robusto a distintos nombres de campo)."""
         cond = move.invoice_payment_term_id.name if move.invoice_payment_term_id else None
 
-        # días: si hay fechas, usamos diferencia; si no, intentamos con la línea mayor del término
         term_days = None
-        if move.invoice_date and move.invoice_date_due:
-            term_days = (move.invoice_date_due - move.invoice_date).days
-        elif move.invoice_payment_term_id and move.invoice_payment_term_id.line_ids:
-            term_days = max(move.invoice_payment_term_id.line_ids.mapped("days") or [0])
 
-        # métodos: si usas payment_method_line_id (v16+ en pagos), o deja vacío
+        # a) Intentar con diferencia de fechas (si existen y son date/datetime)
+        inv_date = move.invoice_date
+        due_date = move.invoice_date_due
+        try:
+            if isinstance(inv_date, datetime):
+                inv_date = inv_date.date()
+            if isinstance(due_date, datetime):
+                due_date = due_date.date()
+            if isinstance(inv_date, date) and isinstance(due_date, date):
+                term_days = (due_date - inv_date).days
+        except Exception:
+            term_days = None
+
+        # b) Si no hay fechas, usar líneas del término de pago (days/nb_days/delay)
+        if term_days is None and move.invoice_payment_term_id and move.invoice_payment_term_id.line_ids:
+            line_days = []
+            for line in move.invoice_payment_term_id.line_ids:
+                for fname in ("days", "nb_days", "delay"):
+                    if hasattr(line, fname):
+                        val = getattr(line, fname)
+                        if isinstance(val, (int, float)):
+                            line_days.append(int(val))
+                            break
+            term_days = max(line_days) if line_days else None
+
+        # Métodos de pago (si el campo existe)
         methods = []
         if hasattr(move, "payment_method_line_id") and move.payment_method_line_id:
             methods = [move.payment_method_line_id.name]
+
         return {"condition": cond, "term_days": term_days, "methods": methods}
 
     def _uom_info(self, line):
@@ -188,18 +210,16 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         uom = line.product_uom_id
         name = uom.name if uom else None
         code = None
-        # posibles campos de código (ajusta si tienes uno específico)
         for fname in ["l10n_cr_unit_code", "code", "uom_code", "x_uom_code"]:
-            if uom and hasattr(uom, fname) and getattr(uom, fname):
-                code = getattr(uom, fname)
-                break
+            if uom and hasattr(uom, fname):
+                val = getattr(uom, fname)
+                if val:
+                    code = val
+                    break
         return {"uom_name": name, "uom_code": code}
 
-    # ------- payload enriquecido (reemplaza tu _build_post_payload por este) -------
-
     def _build_post_payload(self, move):
-        """Payload JSON con cabecera, CR address (provincia/cantón/distrito/barrio),
-        términos de pago, métodos, líneas con CABYS, taxes y UoM."""
+        """Payload JSON con cabecera, dirección CR, términos de pago, líneas con CABYS, taxes y UoM."""
         self.ensure_one()
         currency = move.currency_id
         company_partner = move.company_id.partner_id
@@ -211,7 +231,6 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 "move_type": move.move_type,  # p.ej. out_invoice
                 "name": move.name or move.payment_reference or "/",
                 "state": move.state,
-
                 "journal": {
                     "id": move.journal_id.id,
                     "name": move.journal_id.display_name or "",
@@ -223,12 +242,10 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                     "symbol": currency.symbol if currency else "",
                     "position": currency.position if currency else "before",
                 },
-
                 "dates": {
                     "invoice_date": str(move.invoice_date) if move.invoice_date else None,
                     "invoice_date_due": str(move.invoice_date_due) if move.invoice_date_due else None,
                 },
-
                 "company": {
                     "id": move.company_id.id,
                     "name": move.company_id.name or (company_partner.display_name or ""),
@@ -237,7 +254,6 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                     "phone": company_partner.phone or company_partner.mobile or None,
                     "address": self._cr_address_dict(company_partner),
                 },
-
                 "partner": {
                     "id": customer.id,
                     "name": customer.display_name or "",
@@ -246,13 +262,11 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                     "phone": customer.phone or customer.mobile or None,
                     "address": self._cr_address_dict(customer),
                 },
-
                 "amounts": {
                     "untaxed": float(move.amount_untaxed or 0.0),
                     "tax": float(move.amount_tax or 0.0),
                     "total": float(move.amount_total or 0.0),
                 },
-
                 "payment": self._payment_info(move),
                 "lines": [],
                 "meta": {"source": "odoo", "version": "1.0"},
@@ -277,11 +291,9 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 "uom_code": uom["uom_code"],
                 "price_unit": float(line.price_unit or 0.0),
                 "discount": float(line.discount or 0.0),
-
-                "cabys": line.cabys or None,
+                "cabys": getattr(line, "cabys", None) or None,
                 "taxes_display": taxes_display,
                 "taxes_ids": taxes_ids,
-
                 "subtotal": float(line.price_subtotal or 0.0),
                 "total": float(line.price_total or 0.0),
             })
@@ -294,49 +306,50 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         headers.setdefault("Content-Type", "application/json")
         data = json.dumps(payload).encode("utf-8")
 
-        # Contexto SSL por defecto (respeta certificados del sistema)
-        context = ssl.create_default_context()
+        context = ssl.create_default_context()  # respeta certificados del sistema
         req = Request(url, data=data, headers=headers, method="POST")
 
         with urlopen(req, context=context, timeout=timeout) as resp:
             status = resp.getcode()
             body = resp.read().decode("utf-8", errors="replace")
         return status, body
-    # ---------- FIN helpers POST ----------
 
     def action_post_invoice(self):
         """
         Envía POST con los datos de la factura y luego contabiliza.
-        - Usa parámetros del sistema para URL y token:
-            clocky.facturar_post_url
-            clocky.facturar_post_token   (opcional, se envía como Bearer)
-            clocky.facturar_block_on_fail (opcional: '1' para bloquear si falla)
+        Lee parámetros del sistema cuando existan y permite bloquear la contabilización si el POST falla.
         """
         self.ensure_one()
         move = self.move_id
 
         # 1) Parametrización
-        icp = self.env["ir.config_parameter"].sudo()    
+        icp = self.env["ir.config_parameter"].sudo()
+        # Usa param del sistema con fallback a webhook de pruebas:
+        url = (icp.get_param("clocky.facturar_post_url") or "").strip()
+        if not url:
+            url = "https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4"  # TEST fallback
 
-
-
-       #Cambiar a futuro por esta línea para producción url = icp.get_param("https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4") or "" y ajustar parámetros en sistema
-        url = "https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4"
-
-        token = icp.get_param("clocky.facturar_post_token") or ""
+        token = (icp.get_param("clocky.facturar_post_token") or "").strip()
         block_on_fail = (icp.get_param("clocky.facturar_block_on_fail") or "").strip() in ("1", "true", "True", "TRUE")
 
-        # 2) Si hay URL, construimos y enviamos POST
+        # 2) Construir y enviar POST (si hay URL)
         post_status = None
         post_body = None
         post_error = None
         if url:
             try:
-                payload = self._build_post_payload(move)
+                try:
+                    payload = self._build_post_payload(move)
+                except Exception:
+                    tb = traceback.format_exc()
+                    raise UserError(_("Fallo construyendo el payload de la factura:\n%s") % tb)
+
                 headers = {}
                 if token:
                     headers["Authorization"] = f"Bearer {token}"
+
                 post_status, post_body = self._http_post(url, payload, headers=headers)
+
                 # Log al chatter de la factura
                 move.message_post(
                     body=_("POST enviado a <b>%s</b> (status <code>%s</code>)<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
@@ -351,7 +364,6 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                     subtype_xmlid="mail.mt_note",
                 )
                 if block_on_fail:
-                    # Si está parametrizado, bloqueamos la contabilización
                     raise UserError(_("No fue posible notificar vía POST. Se ha bloqueado la contabilización.\n\nDetalle: %s") % post_error)
 
         # 3) Contabilizar factura
@@ -359,7 +371,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             raise UserError(_("La factura no está en borrador."))
         move.action_post()
 
-        # 4) Reabrir la factura
+        # 4) Reabrir la factura ya contabilizada
         action = self.env["ir.actions.actions"]._for_xml_id("account.action_move_out_invoice_type")
         action.update({
             "view_mode": "form",
