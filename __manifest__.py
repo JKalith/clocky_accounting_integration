@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    "name": "Facturada electroncia para clientes de Costa Rica",
+    "name": "Factura electronica para clientes de Costa Rica",
     "summary": "Módulo para Facturación Electrónica en Costa Rica con soporte CABYS",
     "version": "17.0.1.0.0",
     "category": "Accounting/Accounting",
