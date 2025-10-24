@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
-    "name": "Accounting Calculator (Header Button)",
-    "summary": "Calculadora básica (sumar, restar, multiplicar) desde Facturas",
+    "name": "Facturada electroncia para clientes de Costa Rica",
+    "summary": "Módulo para Facturación Electrónica en Costa Rica con soporte CABYS",
     "version": "17.0.1.0.0",
     "category": "Accounting/Accounting",
     "author": "James / Clocky",

@@ -2,16 +2,16 @@
 """
 Title: Invoice Preview Wizard (POST + Post)
 Description:
-    Extiende el wizard de vista previa para:
-      1) Construir un payload JSON con datos de la factura (cabecera y líneas con CABYS)
-      2) Enviarlo vía HTTP POST a una URL configurable en Parámetros del sistema
-      3) (Opcional) Registrar el resultado en el chatter de la factura
-      4) Contabilizar la factura
+    Extends the invoice preview wizard to:
+      1) Build a JSON payload with invoice data (header and lines including CABYS)
+      2) Send it via HTTP POST to a URL configured in System Parameters
+      3) (Optional) Log the POST result into the invoice chatter
+      4) Post (validate) the invoice
 
-Params del sistema (recomendado):
+Recommended System Parameters:
     - clocky.facturar_post_url
-    - clocky.facturar_post_token        (opcional, se envía como Bearer)
-    - clocky.facturar_block_on_fail     (opcional: '1'/'true' para bloquear si falla)
+    - clocky.facturar_post_token        (optional, sent as Bearer)
+    - clocky.facturar_block_on_fail     (optional: '1'/'true' to block on failure)
 """
 
 import json
@@ -29,6 +29,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
     _name = "account.invoice.preview.wizard"
     _description = "Vista previa de factura (Facturar)"
 
+    # UI labels intentionally left in Spanish (per user request)
     move_id = fields.Many2one("account.move", string="Factura", required=True, readonly=True)
     name = fields.Char(string="Consecutivo", readonly=True)
     partner_name = fields.Char(string="Cliente", readonly=True)
@@ -48,9 +49,10 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         res = super().default_get(fields_list)
         move = self.env["account.move"].browse(self.env.context.get("active_id"))
         if not move or move._name != "account.move":
+            # UI message kept in Spanish
             raise UserError(_("Abra una factura para usar 'Facturar'."))
 
-        # Cabecera
+        # Header
         res.update({
             "move_id": move.id,
             "name": move.name or move.payment_reference or _("Borrador"),
@@ -66,7 +68,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             "amount_total": move.amount_total,
         })
 
-        # Utilidad: formateo monetario
+        # Monetary formatter for preview HTML
         def fmt(amount):
             amount = amount or 0.0
             cur = move.currency_id
@@ -76,7 +78,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 return f"{amount:,.2f} {cur.symbol}"
             return f"{amount:,.2f}"
 
-        # Líneas en HTML (incluye CABYS)
+        # Lines as HTML (includes CABYS)
         rows = []
         for l in move.invoice_line_ids:
             pname = l.product_id.display_name or (l.name or "")
@@ -118,18 +120,19 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         res["lines_html"] = table
         return res
 
-    # ---------- helpers para POST ----------
+    # ---------- POST helpers ----------
 
     def _get_any(self, rec, names):
-        """Devuelve el primer atributo válido de 'rec' en 'names'.
-        Si es many2one retorna .name; si es simple, retorna su valor."""
+        """Return the first valid attribute of `rec` found in `names`.
+        If attribute is a many2one record, return its `.name`; otherwise, return the raw value.
+        """
         for n in names:
             if hasattr(rec, n):
                 val = getattr(rec, n)
                 if not val:
                     continue
                 try:
-                    # Si es registro (many2one), devolver su nombre
+                    # If it's a record (many2one), prefer its display name
                     if hasattr(val, "name"):
                         return val.name or ""
                 except Exception:
@@ -138,16 +141,17 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return ""
 
     def _cr_address_dict(self, partner):
-        """Arma el bloque de dirección CR (provincia, cantón, distrito, barrio),
-        contemplando variantes comunes de campos en la BD."""
-        # País (CR)
+        """Build the Costa Rica address block (province, canton, district, neighborhood),
+        being tolerant to common field-name variations in the DB.
+        """
+        # Country defaults to CR when missing
         country = (partner.country_id.code or partner.country_id.name or "CR") if partner.country_id else "CR"
 
-        # Nota:
-        # - province:    state_id / l10n_cr_province_id / province_id / x_province*
-        # - canton:      county_id / l10n_cr_canton_id / canton_id / x_canton*
-        # - district:    district_id / l10n_cr_district_id / x_district*
-        # - neighborhood:neighborhood_id / l10n_cr_neighborhood_id / x_neighborhood* / barrio
+        # Typical field name variants seen in CR localizations/customizations:
+        # - province:     state_id / l10n_cr_province_id / province_id / x_province*
+        # - canton:       county_id / l10n_cr_canton_id / canton_id / x_canton*
+        # - district:     district_id / l10n_cr_district_id / x_district*
+        # - neighborhood: neighborhood_id / l10n_cr_neighborhood_id / x_neighborhood* / barrio
         province = self._get_any(partner, [
             "l10n_cr_province_id", "province_id", "state_id", "l10n_cr_province",
             "x_province_id", "x_province"
@@ -165,13 +169,13 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             "x_neighborhood_id", "x_neighborhood", "barrio"
         ])
 
-        # Campos libres de dirección (se mantienen igual)
+        # Free-form address parts (kept as-is)
         street = partner.street or ""
         street2 = partner.street2 or ""
-        city = partner.city or ""      # útil si lo usas para "distrito" en algunas bases
+        city = partner.city or ""      # sometimes reused for district in certain DBs
         zip_code = partner.zip or ""
 
-        other = " ".join(filter(None, [street, street2, city, zip_code])).strip()   
+        other = " ".join(filter(None, [street, street2, city, zip_code])).strip()
 
         return {
             "country": country or "CR",
@@ -183,12 +187,12 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         }
 
     def _payment_info(self, move):
-        """Condición, días y métodos de pago (robusto a distintos nombres de campo)."""
+        """Return payment condition, inferred term days, and methods (robust to field-name differences)."""
         cond = move.invoice_payment_term_id.name if move.invoice_payment_term_id else None
 
         term_days = None
 
-        # a) Intentar con diferencia de fechas (si existen y son date/datetime)
+        # Prefer computing from invoice and due dates when available
         inv_date = move.invoice_date
         due_date = move.invoice_date_due
         try:
@@ -201,7 +205,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         except Exception:
             term_days = None
 
-        # b) Si no hay fechas, usar líneas del término de pago (days/nb_days/delay)
+        # Fallback to payment term lines (days/nb_days/delay)
         if term_days is None and move.invoice_payment_term_id and move.invoice_payment_term_id.line_ids:
             line_days = []
             for line in move.invoice_payment_term_id.line_ids:
@@ -213,7 +217,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                             break
             term_days = max(line_days) if line_days else None
 
-        # Métodos de pago (si el campo existe)
+        # Payment method (if present)
         methods = []
         if hasattr(move, "payment_method_line_id") and move.payment_method_line_id:
             methods = [move.payment_method_line_id.name]
@@ -221,7 +225,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return {"condition": cond, "term_days": term_days, "methods": methods}
 
     def _uom_info(self, line):
-        """Nombre y código UoM. Intenta campos habituales de localización CR si existen."""
+        """Return UoM name and code, trying common CR localization fields when present."""
         uom = line.product_uom_id
         name = uom.name if uom else None
         code = None
@@ -234,7 +238,9 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return {"uom_name": name, "uom_code": code}
 
     def _build_post_payload(self, move):
-        """Payload JSON con cabecera, dirección CR, términos de pago, líneas con CABYS, taxes y UoM."""
+        """Build the JSON payload with header, Costa Rica address block, payment terms,
+        and lines including CABYS, taxes, and UoM.
+        """
         self.ensure_one()
         currency = move.currency_id
         company_partner = move.company_id.partner_id
@@ -243,7 +249,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         payload = {
             "invoice": {
                 "id": move.id,
-                "move_type": move.move_type,  # p.ej. out_invoice
+                "move_type": move.move_type,  # e.g., out_invoice
                 "name": move.name or move.payment_reference or "/",
                 "state": move.state,
                 "journal": {
@@ -316,12 +322,13 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return payload
 
     def _http_post(self, url, payload, headers=None, timeout=25):
-        """Envía POST con urllib (sin dependencias externas)."""
+        """Send a JSON POST using urllib (no external dependencies)."""
         headers = headers or {}
         headers.setdefault("Content-Type", "application/json")
         data = json.dumps(payload).encode("utf-8")
 
-        context = ssl.create_default_context()  # respeta certificados del sistema
+        # Respect system root certificates
+        context = ssl.create_default_context()
         req = Request(url, data=data, headers=headers, method="POST")
 
         with urlopen(req, context=context, timeout=timeout) as resp:
@@ -331,15 +338,17 @@ class AccountInvoicePreviewWizard(models.TransientModel):
 
     def action_post_invoice(self):
         """
-        Envía POST con los datos de la factura y luego contabiliza.
-        Lee parámetros del sistema cuando existan y permite bloquear la contabilización si el POST falla.
+        Send a POST with invoice data and then post the invoice.
+        Reads system parameters when available and can block posting if the POST fails.
         """
         self.ensure_one()
         move = self.move_id
 
-        # 1) Parametrización
+        # 1) Parameters
         icp = self.env["ir.config_parameter"].sudo()
-        # Usa param del sistema con fallback a webhook de pruebas:
+        # Uses system parameter; falls back to a test webhook when not set.
+
+        # NOTE: Replace webhook.site URL with a private endpoint for production use.
         url = (icp.get_param("clocky.facturar_post_url") or "").strip()
         if not url:
             url = "https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4"  # TEST fallback
@@ -347,7 +356,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         token = (icp.get_param("clocky.facturar_post_token") or "").strip()
         block_on_fail = (icp.get_param("clocky.facturar_block_on_fail") or "").strip() in ("1", "true", "True", "TRUE")
 
-        # 2) Construir y enviar POST (si hay URL)
+        # 2) Build & send POST (if URL present)
         post_status = None
         post_body = None
         post_error = None
@@ -357,6 +366,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                     payload = self._build_post_payload(move)
                 except Exception:
                     tb = traceback.format_exc()
+                    # UI message kept in Spanish
                     raise UserError(_("Fallo construyendo el payload de la factura:\n%s") % tb)
 
                 headers = {}
@@ -365,7 +375,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
 
                 post_status, post_body = self._http_post(url, payload, headers=headers)
 
-                # Log al chatter de la factura
+                # Log into invoice chatter (UI string kept in Spanish)
                 move.message_post(
                     body=_("POST enviado a <b>%s</b> (status <code>%s</code>)<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
                          (url, post_status, (post_body[:2000] if post_body else "")),
@@ -373,20 +383,23 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 )
             except (HTTPError, URLError, Exception) as e:
                 post_error = str(e)
+                # UI string kept in Spanish
                 move.message_post(
                     body=_("Error al enviar POST a <b>%s</b>:<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
                          (url, post_error[:2000]),
                     subtype_xmlid="mail.mt_note",
                 )
                 if block_on_fail:
+                    # UI message kept in Spanish
                     raise UserError(_("No fue posible notificar vía POST. Se ha bloqueado la contabilización.\n\nDetalle: %s") % post_error)
 
-        # 3) Contabilizar factura
+        # 3) Post the invoice
         if move.state != "draft":
+            # UI message kept in Spanish
             raise UserError(_("La factura no está en borrador."))
         move.action_post()
 
-        # 4) Reabrir la factura ya contabilizada
+        # 4) Re-open the now-posted invoice in form view
         action = self.env["ir.actions.actions"]._for_xml_id("account.action_move_out_invoice_type")
         action.update({
             "view_mode": "form",
@@ -400,7 +413,7 @@ class AccountMove(models.Model):
     _inherit = "account.move"
 
     def action_open_invoice_preview(self):
-        """Abre el wizard de vista previa para la factura actual."""
+        """Open the preview wizard for the current invoice."""
         self.ensure_one()
         return {
             "type": "ir.actions.act_window",
