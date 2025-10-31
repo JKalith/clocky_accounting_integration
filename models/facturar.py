@@ -394,10 +394,11 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                     raise UserError(_("No fue posible notificar vía POST. Se ha bloqueado la contabilización.\n\nDetalle: %s") % post_error)
 
         # 3) Post the invoice
-        if move.state != "draft":
+        if move.state == "draft":
             # UI message kept in Spanish
-            raise UserError(_("La factura no está en borrador."))
-        move.action_post()
+            raise UserError(_("La factura está en borrador."))
+      
+        else: move.action_post() 
 
         # 4) Re-open the now-posted invoice in form view
         action = self.env["ir.actions.actions"]._for_xml_id("account.action_move_out_invoice_type")
