@@ -343,70 +343,67 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         """
         self.ensure_one()
         move = self.move_id
+        if move.state != "draft":
+            # 1) Parameters
+            icp = self.env["ir.config_parameter"].sudo()
+            # Uses system parameter; falls back to a test webhook when not set.
 
-        # 1) Parameters
-        icp = self.env["ir.config_parameter"].sudo()
-        # Uses system parameter; falls back to a test webhook when not set.
+            # NOTE: Replace webhook.site URL with a private endpoint for production use.
+            url = (icp.get_param("clocky.facturar_post_url") or "").strip()
+            if not url:
+                url = "https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4"  # TEST fallback
 
-        # NOTE: Replace webhook.site URL with a private endpoint for production use.
-        url = (icp.get_param("clocky.facturar_post_url") or "").strip()
-        if not url:
-            url = "https://webhook.site/c7f3f0a4-f206-47b9-9595-b7cfc58828f4"  # TEST fallback
+            token = (icp.get_param("clocky.facturar_post_token") or "").strip()
+            block_on_fail = (icp.get_param("clocky.facturar_block_on_fail") or "").strip() in ("1", "true", "True", "TRUE")
 
-        token = (icp.get_param("clocky.facturar_post_token") or "").strip()
-        block_on_fail = (icp.get_param("clocky.facturar_block_on_fail") or "").strip() in ("1", "true", "True", "TRUE")
-
-        # 2) Build & send POST (if URL present)
-        post_status = None
-        post_body = None
-        post_error = None
-        if url:
-            try:
+            # 2) Build & send POST (if URL present)
+            post_status = None
+            post_body = None
+            post_error = None
+            if url:
                 try:
-                    payload = self._build_post_payload(move)
-                except Exception:
-                    tb = traceback.format_exc()
-                    # UI message kept in Spanish
-                    raise UserError(_("Fallo construyendo el payload de la factura:\n%s") % tb)
+                    try:
+                        payload = self._build_post_payload(move)
+                    except Exception:
+                        tb = traceback.format_exc()
+                        # UI message kept in Spanish
+                        raise UserError(_("Fallo construyendo el payload de la factura:\n%s") % tb)
 
-                headers = {}
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
+                    headers = {}
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
 
-                post_status, post_body = self._http_post(url, payload, headers=headers)
+                    post_status, post_body = self._http_post(url, payload, headers=headers)
 
-                # Log into invoice chatter (UI string kept in Spanish)
-                move.message_post(
-                    body=_("POST enviado a <b>%s</b> (status <code>%s</code>)<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
-                         (url, post_status, (post_body[:2000] if post_body else "")),
-                    subtype_xmlid="mail.mt_note",
-                )
-            except (HTTPError, URLError, Exception) as e:
-                post_error = str(e)
-                # UI string kept in Spanish
-                move.message_post(
-                    body=_("Error al enviar POST a <b>%s</b>:<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
-                         (url, post_error[:2000]),
-                    subtype_xmlid="mail.mt_note",
-                )
-                if block_on_fail:
-                    # UI message kept in Spanish
-                    raise UserError(_("No fue posible notificar vía POST. Se ha bloqueado la contabilización.\n\nDetalle: %s") % post_error)
+                    # Log into invoice chatter (UI string kept in Spanish)
+                    move.message_post(
+                        body=_("POST enviado a <b>%s</b> (status <code>%s</code>)<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
+                            (url, post_status, (post_body[:2000] if post_body else "")),
+                        subtype_xmlid="mail.mt_note",
+                    )
+                except (HTTPError, URLError, Exception) as e:
+                    post_error = str(e)
+                    # UI string kept in Spanish
+                    move.message_post(
+                        body=_("Error al enviar POST a <b>%s</b>:<br/><pre style='white-space:pre-wrap;'>%s</pre>") %
+                            (url, post_error[:2000]),
+                        subtype_xmlid="mail.mt_note",
+                    )
+                    if block_on_fail:
+                        # UI message kept in Spanish
+                        raise UserError(_("No fue posible notificar vía POST. Se ha bloqueado la contabilización.\n\nDetalle: %s") % post_error)
 
-        # 3) Post the invoice
-        if move.state == "draft":
+
+            # 4) Re-open the now-posted invoice in form view
+            action = self.env["ir.actions.actions"]._for_xml_id("account.action_move_out_invoice_type")
+            action.update({
+                "view_mode": "form",
+                "res_id": move.id,
+                "target": "current",
+            })
+        else:
             # UI message kept in Spanish
-            raise UserError(_("La factura está en borrador."))
-      
-        else: move.action_post() 
-
-        # 4) Re-open the now-posted invoice in form view
-        action = self.env["ir.actions.actions"]._for_xml_id("account.action_move_out_invoice_type")
-        action.update({
-            "view_mode": "form",
-            "res_id": move.id,
-            "target": "current",
-        })
+            raise UserError(_("La factura no puede estar en borrador'."))
         return action
 
 
