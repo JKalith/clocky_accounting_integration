@@ -25,6 +25,7 @@ from odoo import api, fields, models, _
 from odoo.exceptions import UserError
 
 
+
 class AccountInvoicePreviewWizard(models.TransientModel):
     _name = "account.invoice.preview.wizard"
     _description = "Vista previa de factura (Facturar)"
@@ -405,8 +406,10 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             # UI message kept in Spanish
             raise UserError(_("La factura no puede estar en borrador'."))
         return action
+    
 
 
+    
 class AccountMove(models.Model):
     _inherit = "account.move"
 
@@ -420,3 +423,78 @@ class AccountMove(models.Model):
             "target": "new",
             "context": {"active_id": self.id},
         }
+
+    def clocky_send_fe_from_pos(self):
+        """
+        Enviar esta factura a la API de facturación (misma lógica de Facturar),
+        pensado para ser llamado automáticamente desde el POS.
+
+        No vuelve a contabilizar (la factura ya viene 'posted' desde POS),
+        solo construye el payload y hace el POST.
+        """
+        for move in self:
+            # Solo facturas de cliente
+            if move.move_type != "out_invoice":
+                continue
+
+            icp = self.env["ir.config_parameter"].sudo()
+
+            url = (icp.get_param("clocky.facturar_post_url") or "").strip()
+            if not url:
+                move.message_post(
+                    body=_("Clocky FE POS: no se ha configurado 'clocky.facturar_post_url', se omite el envío."),
+                    subtype_xmlid="mail.mt_note",
+                )
+                continue
+
+            token = (icp.get_param("clocky.facturar_post_token") or "").strip()
+            block_on_fail_param = (icp.get_param("clocky.facturar_block_on_fail") or "").strip().lower()
+            block_on_fail = block_on_fail_param in ("1", "true", "sí", "si", "yes")
+
+            # Creamos un "wizard temporal" solo para reutilizar _build_post_payload y _http_post
+            wizard = self.env["account.invoice.preview.wizard"].new({"move_id": move.id})
+
+            # Construir payload
+            payload = wizard._build_post_payload(move)
+
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
+            post_status = None
+            post_body = ""
+            post_error = ""
+
+            try:
+                post_status, post_body = wizard._http_post(url, payload, headers=headers)
+
+                move.message_post(
+                    body=_(
+                        "Clocky FE POS: POST enviado a <b>%s</b> (status <code>%s</code>)"
+                        "<br/><pre style='white-space:pre-wrap;'>%s</pre>"
+                    )
+                    % (url, post_status, (post_body[:2000] if post_body else "")),
+                    subtype_xmlid="mail.mt_note",
+                )
+            except Exception as e:
+                post_error = str(e)
+                move.message_post(
+                    body=_(
+                        "Clocky FE POS: error al enviar POST a <b>%s</b>:"
+                        "<br/><pre style='white-space:pre-wrap;'>%s</pre>"
+                    )
+                    % (url, post_error[:2000]),
+                    subtype_xmlid="mail.mt_note",
+                )
+                if block_on_fail:
+                    raise UserError(
+                        _(
+                            "No fue posible notificar la factura al proveedor FE (POS).\n\nDetalle: %s"
+                        )
+                        % post_error
+                    )
+
+        return True

@@ -6,7 +6,7 @@
     "category": "Accounting/Accounting",
     "author": "James / Clocky",
     "license": "LGPL-3",
-    "depends": ["account", "product"],
+   "depends": ["account", "product", "point_of_sale"],
     "data": [
         "security/ir.model.access.csv",
         "views/facturar_views.xml",
