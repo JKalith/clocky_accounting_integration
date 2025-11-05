@@ -103,6 +103,12 @@ class AccountInvoicePreviewWizard(models.TransientModel):
                 f"</tr>"
             )
 
+         # Construir el cuerpo de la tabla (tbody)
+        if rows:
+            body_html = "".join(rows)
+        else:
+            body_html = '<tr><td colspan="8">Sin líneas</td></tr>'
+
         table = (
             "<table class='table table-sm o_list_view' style='width:100%; border-collapse:collapse;'>"
             "<thead><tr>"
@@ -115,7 +121,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
             "<th style='text-align:right'>Subtotal</th>"
             "<th style='text-align:right'>Total</th>"
             "</tr></thead>"
-            f"<tbody>{''.join(rows) if rows else '<tr><td colspan=\"8\">Sin líneas</td></tr>'}</tbody>"
+            "<tbody>" + body_html + "</tbody>"
             "</table>"
         )
         res["lines_html"] = table
