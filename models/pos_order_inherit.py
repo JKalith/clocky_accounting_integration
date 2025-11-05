@@ -5,12 +5,13 @@ from odoo import models
 class PosOrder(models.Model):
     _inherit = "pos.order"
 
-    def _create_invoice(self):
+    def _create_invoice(self, move_vals):
         """
         Extiende la creación de factura del POS para enviar la factura
         al servicio de facturación electrónica usando el módulo Clocky.
         """
-        res = super()._create_invoice()
+        # Llamamos al método original con los mismos argumentos
+        res = super()._create_invoice(move_vals)
 
         for order in self:
             move = order.account_move
