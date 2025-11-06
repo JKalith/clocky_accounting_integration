@@ -5,15 +5,16 @@
     <field name="model">account.move</field>
     <field name="inherit_id" ref="account.view_move_form"/>
     <field name="arch" type="xml">
-      <xpath expr="//form/header" position="inside">
+      <!-- Metemos el botón dentro del <header> del formulario -->
+      <xpath expr="//header" position="inside">
         <button
-          name="action_open_invoice_preview"
+          name="action_open_facturar_wizard"
           type="object"
-          string="Facturar"
-          class="btn-secondary"
-          icon="fa-check"
+          string="Factura electrónica"
+          class="oe_highlight"
           context="{'save_before_action': True}"
-          groups="account.group_account_invoice"/>
+          groups="account.group_account_invoice"
+        />
       </xpath>
     </field>
   </record>

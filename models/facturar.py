@@ -411,7 +411,7 @@ class AccountInvoicePreviewWizard(models.TransientModel):
 class AccountMove(models.Model):
     _inherit = "account.move"
 
-    def clocky_send_fe_from_pos(self):
+    def action_open_facturar_wizard(self):
         """
         Enviar esta factura a la API de facturación (misma lógica de Facturar),
         pensado para ser llamado automáticamente desde el POS.
