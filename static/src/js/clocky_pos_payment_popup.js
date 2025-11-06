@@ -28,62 +28,77 @@ function getCabysFromProduct(product) {
 }
 
 /**
- * Envía el payload de la venta de POS al Web App de Google Apps Script (GAS).
- * Incluye muchos console.log para poder seguir cada paso en la consola del navegador.
+ * Envía el payload de la venta de POS al servidor de Odoo,
+ * y en el servidor se reenvía al Web App de Google Apps Script (GAS).
+ *
+ * Ya NO hacemos fetch() directo a script.google.com para evitar errores CORS.
+ * En su lugar, usamos un método del modelo `clocky.pos.integration`
+ * (método Python: clocky_pos_post_to_gas) vía RPC.
  */
-async function sendPosOrderToGas(payload) {
-    // ⚠️ IMPORTANTE:
-    // Reemplaza esta URL por la URL de despliegue de tu Web App de GAS (la misma que ya usas en contabilidad, si quieres).
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyRTh2kRiq1jH5yfbcytXrtLXApWbjFziFAt6kLxMP0aoeig1NPxnSu1O5VhPS2wPu2dw/exec";
-
+async function sendPosOrderToGas(payload, paymentScreen) {
     console.log("[Clocky POS] ===============================================");
-    console.log("[Clocky POS] Iniciando envío de venta a GAS (POS)...");
-    console.log("[Clocky POS] URL de destino:", GAS_URL);
+    console.log("[Clocky POS] Iniciando envío de venta a GAS (vía Odoo / clocky_pos_post_to_gas)...");
     console.log("[Clocky POS] Payload (objeto JS):", payload);
 
-    let body = "";
-    try {
-        body = JSON.stringify(payload);
-        console.log("[Clocky POS] Payload serializado a JSON:", body);
-    } catch (jsonErr) {
-        console.error("[Clocky POS] Error al serializar el payload a JSON:", jsonErr);
-        return;
+    // Obtenemos el servicio ORM desde la pantalla de pago
+    const orm =
+        (paymentScreen && paymentScreen.orm) ||
+        (paymentScreen && paymentScreen.env && paymentScreen.env.services && paymentScreen.env.services.orm) ||
+        null;
+
+    if (!orm) {
+        console.error("[Clocky POS] No se encontró 'orm' en PaymentScreen. No se puede llamar al método de servidor.");
+        return {
+            ok: false,
+            error: "No se encontró orm en PaymentScreen",
+        };
     }
 
     try {
-        console.log("[Clocky POS] Lanzando fetch() hacia GAS...");
-        const response = await fetch(GAS_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-            },
-            body,
-        });
-
-        console.log(
-            "[Clocky POS] Respuesta HTTP de GAS:",
-            response.status,
-            response.statusText
+        console.log("[Clocky POS] Llamando a modelo 'clocky.pos.integration' :: método 'clocky_pos_post_to_gas' vía RPC...");
+        /**
+         * En Python debes tener algo como:
+         *
+         * class ClockyPosIntegration(models.Model):
+         *     _name = "clocky.pos.integration"
+         *
+         *     @api.model
+         *     def clocky_pos_post_to_gas(self, payload):
+         *         # hacer POST a GAS y devolver dict {ok: True/False, ...}
+         */
+        const result = await orm.call(
+            "clocky.pos.integration",    // modelo
+            "clocky_pos_post_to_gas",    // método Python
+            [],                          // ids (ninguno, es @api.model)
+            [payload]                    // args: el payload como dict
         );
 
-        const text = await response.text();
-        console.log("[Clocky POS] Texto crudo de respuesta de GAS:", text);
+        console.log("[Clocky POS] Respuesta desde Odoo (clocky_pos_post_to_gas):", result);
 
-        try {
-            const json = JSON.parse(text);
-            console.log("[Clocky POS] Respuesta parseada como JSON:", json);
-        } catch (parseErr) {
-            console.warn(
-                "[Clocky POS] No se pudo parsear la respuesta como JSON (esto es normal si tu GAS no devuelve JSON):",
-                parseErr
+        if (!result || result.ok === false) {
+            console.error(
+                "[Clocky POS] Servidor reporta error al enviar a GAS:",
+                result && result.error ? result.error : result
+            );
+        } else {
+            console.log(
+                "[Clocky POS] Envío a GAS OK. Status:",
+                result.status,
+                "Respuesta GAS:",
+                result.response
             );
         }
-    } catch (netErr) {
-        console.error("[Clocky POS] Error de red al llamar a GAS:", netErr);
-    }
 
-    console.log("[Clocky POS] Envío a GAS finalizado (revisa los logs anteriores para ver el detalle).");
+        return result;
+    } catch (err) {
+        console.error("[Clocky POS] Error de red/RPC al llamar clocky_pos_post_to_gas:", err);
+        return {
+            ok: false,
+            error: "Error RPC al llamar clocky_pos_post_to_gas: " + err,
+        };
+    } finally {
+        console.log("[Clocky POS] Envío a GAS (vía Odoo) finalizado (revisa los logs anteriores para ver el detalle).");
+    }
 }
 
 /**
@@ -274,7 +289,7 @@ function showClockyOrderPopup(paymentScreen) {
     }
 
     // --- Construimos payload para envío a GAS ---
-    console.log("[Clocky POS] Preparando payload para envío a GAS...");
+    console.log("[Clocky POS] Preparando payload para envío a GAS (vía Odoo)...");
 
     const paymentLines = order.get_paymentlines ? order.get_paymentlines() : [];
     const paymentMethods = [];
@@ -386,10 +401,11 @@ function showClockyOrderPopup(paymentScreen) {
         },
     };
 
-    console.log("[Clocky POS] Payload final para GAS:", payload);
+    console.log("[Clocky POS] Payload final para Odoo (proxy GAS):", payload);
 
     try {
-        void sendPosOrderToGas(payload);
+        // Llamamos al método async, pero no esperamos el resultado para no bloquear la UI del POS
+        void sendPosOrderToGas(payload, paymentScreen);
     } catch (e) {
         console.error(
             "[Clocky POS] Error inesperado al invocar sendPosOrderToGas:",
