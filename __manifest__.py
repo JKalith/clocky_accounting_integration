@@ -14,11 +14,12 @@
         "views/account_invoice_cabys_view.xml",
     ],
 "assets": {
-    "point_of_sale.assets": [
+    "point_of_sale._assets_pos": [
         "clocky_accounting_integration/static/src/js/clocky_fe_pos_test_button.js",
         "clocky_accounting_integration/static/src/xml/clocky_fe_pos_test_button.xml",
     ],
 },
+
 
     "installable": True,
     "application": False,
