@@ -9,15 +9,19 @@ class PosOrder(models.Model):
         """
         Extiende la creación de factura del POS para enviar la factura
         al servicio de facturación electrónica usando el módulo Clocky.
+
+        NO modifica la lógica del POS:
+        - Primero deja que Odoo cree la factura normalmente.
+        - Luego, si la factura existe y está 'posted',
+          llama a clocky_send_fe_from_pos() para hacer el POST a GAS.
         """
-        # Llamamos al método original con los mismos argumentos
+        # 1) Flujo original de Odoo: crear la factura
         res = super()._create_invoice(move_vals)
 
+        # 2) Por cada pedido de POS, tomar su factura y enviarla a GAS
         for order in self:
             move = order.account_move
-            # Solo si hay factura y está contabilizada
             if move and move.move_type == "out_invoice" and move.state == "posted":
-                # Llamamos al nuevo método en account.move
                 move.clocky_send_fe_from_pos()
 
         return res
