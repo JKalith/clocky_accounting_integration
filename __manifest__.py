@@ -6,21 +6,19 @@
     "category": "Accounting/Accounting",
     "author": "James / Clocky",
     "license": "LGPL-3",
-   "depends": ["account", "product", "point_of_sale"],
+    "depends": ["account", "product", "point_of_sale"],
     "data": [
         "security/ir.model.access.csv",
         "views/facturar_views.xml",
         "views/account_move_inherit.xml",
         "views/account_invoice_cabys_view.xml",
     ],
-"assets": {
-    "point_of_sale._assets_pos": [
-        "clocky_accounting_integration/static/src/js/clocky_fe_pos_test_button.js",
-        "clocky_accounting_integration/static/src/xml/clocky_fe_pos_test_button.xml",
-    ],
-},
-
-
+    "assets": {
+        # Cargamos nuestro JS en los assets del POS
+        "point_of_sale._assets_pos": [
+            "clocky_accounting_integration/static/src/js/clocky_pos_payment_popup.js",
+        ],
+    },
     "installable": True,
     "application": False,
 }
