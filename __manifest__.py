@@ -13,6 +13,13 @@
         "views/account_move_inherit.xml",
         "views/account_invoice_cabys_view.xml",
     ],
+"assets": {
+    "point_of_sale.assets": [
+        "clocky_accounting_integration/models/static/src/js/clocky_fe_pos_test_button.js",
+        "clocky_accounting_integration/models/static/src/xml/clocky_fe_pos_test_button.xml",
+    ],
+},
+
     "installable": True,
     "application": False,
 }
