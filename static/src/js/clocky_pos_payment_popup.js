@@ -35,6 +35,10 @@ function getCabysFromProduct(product) {
  * En su lugar, usamos un método del modelo `clocky.pos.integration`
  * (método Python: clocky_pos_post_to_gas) vía RPC.
  */
+/**
+ * Envía el payload de la venta de POS al Web App de GAS a través del servidor Odoo.
+ * Llama al modelo Python clocky.pos.integration y su método clocky_pos_post_to_gas.
+ */
 async function sendPosOrderToGas(payload, paymentScreen) {
     console.log("[Clocky POS] ===============================================");
     console.log("[Clocky POS] Iniciando envío de venta a GAS (vía Odoo / clocky_pos_post_to_gas)...");
@@ -56,6 +60,7 @@ async function sendPosOrderToGas(payload, paymentScreen) {
 
     try {
         console.log("[Clocky POS] Llamando a modelo 'clocky.pos.integration' :: método 'clocky_pos_post_to_gas' vía RPC...");
+
         /**
          * En Python debes tener algo como:
          *
@@ -69,8 +74,7 @@ async function sendPosOrderToGas(payload, paymentScreen) {
         const result = await orm.call(
             "clocky.pos.integration",    // modelo
             "clocky_pos_post_to_gas",    // método Python
-            [],                          // ids (ninguno, es @api.model)
-            [payload]                    // args: el payload como dict
+            [payload]                    // ✅ args posicionales (no kwargs)
         );
 
         console.log("[Clocky POS] Respuesta desde Odoo (clocky_pos_post_to_gas):", result);
@@ -100,6 +104,7 @@ async function sendPosOrderToGas(payload, paymentScreen) {
         console.log("[Clocky POS] Envío a GAS (vía Odoo) finalizado (revisa los logs anteriores para ver el detalle).");
     }
 }
+
 
 /**
  * Construye y muestra una ventana emergente con información
