@@ -408,29 +408,17 @@ class AccountInvoicePreviewWizard(models.TransientModel):
         return action
     
 
-
-    
 class AccountMove(models.Model):
     _inherit = "account.move"
-
-    def action_open_invoice_preview(self):
-        """Open the preview wizard for the current invoice."""
-        self.ensure_one()
-        return {
-            "type": "ir.actions.act_window",
-            "res_model": "account.invoice.preview.wizard",
-            "view_mode": "form",
-            "target": "new",
-            "context": {"active_id": self.id},
-        }
 
     def clocky_send_fe_from_pos(self):
         """
         Enviar esta factura a la API de facturación (misma lógica de Facturar),
         pensado para ser llamado automáticamente desde el POS.
 
-        No vuelve a contabilizar (la factura ya viene 'posted' desde POS),
-        solo construye el payload y hace el POST.
+        MODO DEBUG:
+        - Además de enviar el POST, lanza un UserError con el status y la respuesta
+          (o el error), para ver en una ventana qué está pasando.
         """
         for move in self:
             # Solo facturas de cliente
@@ -442,19 +430,32 @@ class AccountMove(models.Model):
             url = (icp.get_param("clocky.facturar_post_url") or "").strip()
             if not url:
                 move.message_post(
-                    body=_("Clocky FE POS: no se ha configurado 'clocky.facturar_post_url', se omite el envío."),
+                    body=_(
+                        "Clocky FE POS: no se ha configurado 'clocky.facturar_post_url', "
+                        "se omite el envío."
+                    ),
                     subtype_xmlid="mail.mt_note",
                 )
-                continue
+                # ventana de aviso si ni siquiera hay URL
+                raise UserError(
+                    _(
+                        "Clocky FE POS\n\n"
+                        "No se ha configurado el parámetro del sistema "
+                        "<b>clocky.facturar_post_url</b>.\n\n"
+                        "Sin URL no se puede enviar nada al GAS."
+                    )
+                )
 
             token = (icp.get_param("clocky.facturar_post_token") or "").strip()
-            block_on_fail_param = (icp.get_param("clocky.facturar_block_on_fail") or "").strip().lower()
+            block_on_fail_param = (
+                icp.get_param("clocky.facturar_block_on_fail") or ""
+            ).strip().lower()
             block_on_fail = block_on_fail_param in ("1", "true", "sí", "si", "yes")
 
             # Creamos un "wizard temporal" solo para reutilizar _build_post_payload y _http_post
             wizard = self.env["account.invoice.preview.wizard"].new({"move_id": move.id})
 
-            # Construir payload
+            # 1) Construir payload
             payload = wizard._build_post_payload(move)
 
             headers = {
@@ -469,8 +470,10 @@ class AccountMove(models.Model):
             post_error = ""
 
             try:
+                # 2) Enviar POST al GAS
                 post_status, post_body = wizard._http_post(url, payload, headers=headers)
 
+                # 3) Registrar en el chatter (como antes)
                 move.message_post(
                     body=_(
                         "Clocky FE POS: POST enviado a <b>%s</b> (status <code>%s</code>)"
@@ -479,8 +482,25 @@ class AccountMove(models.Model):
                     % (url, post_status, (post_body[:2000] if post_body else "")),
                     subtype_xmlid="mail.mt_note",
                 )
+
+                # 4) *** DEBUG *** mostrar ventana con la respuesta
+                raise UserError(
+                    _(
+                        "Clocky FE POS - Respuesta del servidor\n\n"
+                        "URL: %s\n"
+                        "Status: %s\n\n"
+                        "Body (primeros caracteres):\n%s"
+                    )
+                    % (
+                        url,
+                        post_status,
+                        (post_body[:1000] if post_body else "«vacío»"),
+                    )
+                )
+
             except Exception as e:
                 post_error = str(e)
+
                 move.message_post(
                     body=_(
                         "Clocky FE POS: error al enviar POST a <b>%s</b>:"
@@ -489,87 +509,16 @@ class AccountMove(models.Model):
                     % (url, post_error[:2000]),
                     subtype_xmlid="mail.mt_note",
                 )
-                if block_on_fail:
-                    raise UserError(
-                        _(
-                            "No fue posible notificar la factura al proveedor FE (POS).\n\nDetalle: %s"
-                        )
-                        % post_error
+
+                # 5) *** DEBUG *** siempre mostramos el error en una ventana
+                raise UserError(
+                    _(
+                        "Clocky FE POS - ERROR al enviar la factura\n\n"
+                        "URL: %s\n\n"
+                        "Detalle:\n%s"
                     )
-
-        return True
-
-
-
-class AccountMove(models.Model):
-    _inherit = "account.move"
-
-    def clocky_send_fe_from_pos(self):
-        """
-        Enviar esta factura a la API de facturación (misma lógica de Facturar),
-        pensado para ser llamado automáticamente desde el POS.
-        """
-        for move in self:
-            if move.move_type != "out_invoice":
-                continue
-
-            icp = self.env["ir.config_parameter"].sudo()
-
-            url = (icp.get_param("clocky.facturar_post_url") or "").strip()
-            if not url:
-                move.message_post(
-                    body=_(
-                        "Clocky FE POS: no se ha configurado 'clocky.facturar_post_url', se omite el envío."
-                    ),
-                    subtype_xmlid="mail.mt_note",
+                    % (url, post_error)
                 )
-                continue
 
-            token = (icp.get_param("clocky.facturar_post_token") or "").strip()
-            block_on_fail_param = (
-                icp.get_param("clocky.facturar_block_on_fail") or ""
-            ).strip().lower()
-            block_on_fail = block_on_fail_param in ("1", "true", "sí", "si", "yes")
-
-            # Reusamos el wizard para construir el payload y hacer el POST
-            wizard = self.env["account.invoice.preview.wizard"].new(
-                {"move_id": move.id}
-            )
-            payload = wizard._build_post_payload(move)
-
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-
-            try:
-                status, body = wizard._http_post(url, payload, headers=headers)
-                move.message_post(
-                    body=_(
-                        "Clocky FE POS: POST enviado a <b>%s</b> (status <code>%s</code>)"
-                        "<br/><pre style='white-space:pre-wrap;'>%s</pre>"
-                    )
-                    % (url, status, (body[:2000] if body else "")),
-                    subtype_xmlid="mail.mt_note",
-                )
-            except Exception as e:
-                post_error = str(e)
-                move.message_post(
-                    body=_(
-                        "Clocky FE POS: error al enviar POST a <b>%s</b>:"
-                        "<br/><pre style='white-space:pre-wrap;'>%s</pre>"
-                    )
-                    % (url, post_error[:2000]),
-                    subtype_xmlid="mail.mt_note",
-                )
-                if block_on_fail:
-                    raise UserError(
-                        _(
-                            "No fue posible notificar la factura al proveedor FE (POS).\n\nDetalle: %s"
-                        )
-                        % post_error
-                    )
-
+        # En modo debug normalmente no llega aquí porque siempre levantamos UserError
         return True
