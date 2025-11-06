@@ -498,3 +498,78 @@ class AccountMove(models.Model):
                     )
 
         return True
+
+
+
+class AccountMove(models.Model):
+    _inherit = "account.move"
+
+    def clocky_send_fe_from_pos(self):
+        """
+        Enviar esta factura a la API de facturación (misma lógica de Facturar),
+        pensado para ser llamado automáticamente desde el POS.
+        """
+        for move in self:
+            if move.move_type != "out_invoice":
+                continue
+
+            icp = self.env["ir.config_parameter"].sudo()
+
+            url = (icp.get_param("clocky.facturar_post_url") or "").strip()
+            if not url:
+                move.message_post(
+                    body=_(
+                        "Clocky FE POS: no se ha configurado 'clocky.facturar_post_url', se omite el envío."
+                    ),
+                    subtype_xmlid="mail.mt_note",
+                )
+                continue
+
+            token = (icp.get_param("clocky.facturar_post_token") or "").strip()
+            block_on_fail_param = (
+                icp.get_param("clocky.facturar_block_on_fail") or ""
+            ).strip().lower()
+            block_on_fail = block_on_fail_param in ("1", "true", "sí", "si", "yes")
+
+            # Reusamos el wizard para construir el payload y hacer el POST
+            wizard = self.env["account.invoice.preview.wizard"].new(
+                {"move_id": move.id}
+            )
+            payload = wizard._build_post_payload(move)
+
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
+            try:
+                status, body = wizard._http_post(url, payload, headers=headers)
+                move.message_post(
+                    body=_(
+                        "Clocky FE POS: POST enviado a <b>%s</b> (status <code>%s</code>)"
+                        "<br/><pre style='white-space:pre-wrap;'>%s</pre>"
+                    )
+                    % (url, status, (body[:2000] if body else "")),
+                    subtype_xmlid="mail.mt_note",
+                )
+            except Exception as e:
+                post_error = str(e)
+                move.message_post(
+                    body=_(
+                        "Clocky FE POS: error al enviar POST a <b>%s</b>:"
+                        "<br/><pre style='white-space:pre-wrap;'>%s</pre>"
+                    )
+                    % (url, post_error[:2000]),
+                    subtype_xmlid="mail.mt_note",
+                )
+                if block_on_fail:
+                    raise UserError(
+                        _(
+                            "No fue posible notificar la factura al proveedor FE (POS).\n\nDetalle: %s"
+                        )
+                        % post_error
+                    )
+
+        return True
