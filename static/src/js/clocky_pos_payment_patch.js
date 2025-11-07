@@ -3,8 +3,9 @@
 import { patch } from "@web/core/utils/patch";
 import { PaymentScreen } from "@point_of_sale/app/screens/payment_screen/payment_screen";
 
-import { buildPosPayload } from "clocky_pos_integration.clocky_pos_payload";
-import { sendPosOrderToGas } from "clocky_pos_integration.clocky_pos_gas_service";
+import { buildPosPayload } from "clocky_accounting_integration.clocky_pos_payload";
+import { sendPosOrderToGas } from "clocky_accounting_integration.clocky_pos_gas_service";
+
 // 👆 Ajusta los imports según tu nombre de módulo / ruta
 
 function showClockyOrderPopup(paymentScreen) {

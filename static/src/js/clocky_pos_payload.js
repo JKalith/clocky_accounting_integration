@@ -1,7 +1,7 @@
 /** @odoo-module **/
 
-import { getCabysFromProduct } from "clocky_pos_integration.clocky_pos_helpers"; 
-// 👆 AJUSTA este path al real de tu módulo
+import { getCabysFromProduct } from "clocky_accounting_integration.clocky_pos_helpers";
+
 
 /**
  * Construye el payload de la venta POS que se enviará a GAS,
