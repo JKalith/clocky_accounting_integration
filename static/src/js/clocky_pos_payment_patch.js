@@ -7,7 +7,8 @@ import { PaymentScreen } from "@point_of_sale/app/screens/payment_screen/payment
 import { buildPosPayload } from "@clocky_accounting_integration/js/clocky_pos_payload";
 import { sendPosOrderToGas } from "@clocky_accounting_integration/js/clocky_pos_gas_service";
 
-// 👆 Ajusta los imports según tu nombre de módulo / ruta
+// Guardamos referencia al método original
+const _superValidateOrder = PaymentScreen.prototype.validateOrder;
 
 function showClockyOrderPopup(paymentScreen) {
     const order = paymentScreen.currentOrder;
@@ -195,17 +196,17 @@ patch(PaymentScreen.prototype, {
             isForceValidate,
         });
 
-        // 1) Flujo normal de Odoo
-        await this._super(isForceValidate);
+        // 1) Llamar al flujo normal de Odoo
+        const res = await _superValidateOrder.call(this, isForceValidate);
 
         console.log(
             "[Clocky POS] validateOrder() :: después de _super, currentOrder:",
             this.currentOrder
         );
 
-        // 2) Mostrar popup
+        // 2) Mostrar popup con el payload de la orden
         showClockyOrderPopup(this);
 
-        console.log("[Clocky POS] validateOrder() :: showClockyOrderPopup() ejecutado");
+        return res;   // importante devolver el resultado
     },
 });
