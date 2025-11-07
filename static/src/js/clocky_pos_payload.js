@@ -1,7 +1,7 @@
 /** @odoo-module **/
 
-import { getCabysFromProduct } from "clocky_accounting_integration.clocky_pos_helpers";
-
+// clocky_pos_payload.js
+import { getCabysFromProduct } from "@clocky_accounting_integration/js/clocky_pos_helpers";
 
 /**
  * Construye el payload de la venta POS que se enviará a GAS,
