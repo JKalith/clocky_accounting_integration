@@ -197,6 +197,7 @@ export function buildPosPayload(order, pos) {
                 vat: company.vat || "",
                 email: company.email || null,
                 phone: company.phone || company.mobile || null,
+                codigo_actividad_receptor: customer.codigo_actividad_receptor || null,
                 address: {
                     country:
                         company.country_id && company.country_id[1]
