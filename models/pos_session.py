@@ -1,5 +1,3 @@
-# models/pos_session.py
-
 from odoo import models
 
 class PosSession(models.Model):

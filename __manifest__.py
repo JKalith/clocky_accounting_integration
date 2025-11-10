@@ -25,7 +25,7 @@
             "clocky_accounting_integration/static/src/js/clocky_pos_payload.js",
             "clocky_accounting_integration/static/src/js/clocky_pos_gas_service.js",
             "clocky_accounting_integration/static/src/js/clocky_pos_payment_patch.js",
-        "clocky_accounting_integration/static/src/xml/pos_partner_activity.xml",
+    "clocky_accounting_integration/static/src/xml/pos_partner_activity.xml",
         ],
     },
     "installable": True,
