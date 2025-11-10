@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-
+# clocky_accounting_integration/models/res_partner.py
 from odoo import models, fields
 
 class ResPartner(models.Model):
@@ -9,4 +8,3 @@ class ResPartner(models.Model):
         string="Código actividad receptor",
         help="Código de actividad económica del receptor para Hacienda (FE CR).",
     )
-
