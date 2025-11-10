@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
-    <!-- 1) Ya existente: Contactos (base.view_partner_form) -->
+    <!-- 1) Contactos (backend) -->
     <record id="view_partner_form_cr_activity" model="ir.ui.view">
         <field name="name">res.partner.form.cr.activity</field>
         <field name="model">res.partner</field>
@@ -12,12 +12,12 @@
         </field>
     </record>
 
-    <!-- 2) Nuevo: formulario que usa el POS al pulsar DETALLES -->
+    <!-- 2) Formulario que usa POS en “DETALLES” -->
     <record id="view_partner_form_cr_activity_pos" model="ir.ui.view">
         <field name="name">res.partner.form.cr.activity.pos</field>
         <field name="model">res.partner</field>
-  
-        <field name="inherit_id" ref="point_of_sale.view_partner_form"/>
+
+        <field name="inherit_id" ref="point_of_sale.view_res_partner_form_pos"/>
         <field name="arch" type="xml">
             <xpath expr="//field[@name='vat']" position="after">
                 <field name="codigo_actividad_receptor"/>
