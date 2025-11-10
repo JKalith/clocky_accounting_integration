@@ -4,4 +4,4 @@ from . import account_move_line_cabys
 from . import pos_order_inherit
 from . import clocky_pos_integration
 from . import res_partner
-
+from . import pos_session
