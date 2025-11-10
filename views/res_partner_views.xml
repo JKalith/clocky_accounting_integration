@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Agregar campo en el formulario de contactos -->
+    <record id="view_partner_form_cr_activity" model="ir.ui.view">
+        <field name="name">res.partner.form.cr.activity</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <!-- Lo metemos después de la cédula / VAT si la tienes -->
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="codigo_actividad_receptor"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Agregar campo en la vista tree (lista) de contactos, opcional -->
+    <record id="view_partner_tree_cr_activity" model="ir.ui.view">
+        <field name="name">res.partner.tree.cr.activity</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='vat']" position="after">
+                <field name="codigo_actividad_receptor"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
