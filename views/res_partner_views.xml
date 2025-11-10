@@ -13,7 +13,7 @@
         </field>
     </record>
 
-    <!-- Agregar campo en la vista tree (lista) de contactos, opcional -->
+    <!-- Agregar campo en la vista tree (lista), opcional -->
     <record id="view_partner_tree_cr_activity" model="ir.ui.view">
         <field name="name">res.partner.tree.cr.activity</field>
         <field name="model">res.partner</field>

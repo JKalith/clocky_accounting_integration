@@ -16,7 +16,7 @@
         "views/facturar_views.xml",
         "views/account_move_inherit.xml",
         "views/account_invoice_cabys_view.xml",
-         "views/res_partner_views.xml",
+        "views/res_partner_views.xml", 
     ],
     "assets": {
         # Archivos JavaScript cargados en los assets del Punto de Venta (POS)
@@ -25,7 +25,7 @@
             "clocky_accounting_integration/static/src/js/clocky_pos_payload.js",
             "clocky_accounting_integration/static/src/js/clocky_pos_gas_service.js",
             "clocky_accounting_integration/static/src/js/clocky_pos_payment_patch.js",
-       
+        "clocky_accounting_integration/static/src/xml/pos_partner_activity.xml",
         ],
     },
     "installable": True,
