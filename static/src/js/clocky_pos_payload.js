@@ -197,10 +197,7 @@ export function buildPosPayload(order, pos) {
                 vat: company.vat || "",
                 email: company.email || null,
                 phone: company.phone || company.mobile || null,
-                codigo_actividad_receptor: customer.codigo_actividad_receptor || null,
-                
                 address: {
-                    
                     country:
                         company.country_id && company.country_id[1]
                             ? company.country_id[1]
@@ -249,11 +246,8 @@ export function buildPosPayload(order, pos) {
             },
         },
     };
-console.log("[Clocky POS] Payload (objeto JS):", payload);
-console.log("[Clocky POS] Codigo actividad cliente:", payload.invoice.customer.codigo_actividad_receptor);
 
     return {
-        
         payload,
         ui: {
             orderName,
