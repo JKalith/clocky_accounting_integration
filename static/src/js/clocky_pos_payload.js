@@ -16,10 +16,25 @@ export function buildPosPayload(order, pos) {
     const envPos = pos || {};
 
     // --- Datos generales / encabezado ---
-    const currency = envPos.currency || {};
+    const currency = (envPos && envPos.currency) ? envPos.currency : {};
     const currencySymbol = currency.symbol || "";
-    const currencyName = currency.name || "";
+    const currencyName =
+    (currency.name && String(currency.name)) ||
+    (currency.display_name && String(currency.display_name)) ||
+    (envPos.company && envPos.company.currency_id && envPos.company.currency_id[1]) ||
+    (envPos.pricelist && envPos.pricelist.currency_id && envPos.pricelist.currency_id[1]) ||
+    "";
 
+console.log("Currency Name:", currencyName);
+console.log("Currency from envPos.company:", envPos.company ? envPos.company.currency_id : null);
+console.log("Currency from envPos.pricelist:", envPos.pricelist ? envPos.pricelist.currency_id : null);
+console.log("Currency object:", currency);
+
+const currencyCode =
+    (currency.name && String(currency.name)) ||
+    (envPos.company && envPos.company.currency_id && envPos.company.currency_id[1]) ||
+    (envPos.pricelist && envPos.pricelist.currency_id && envPos.pricelist.currency_id[1]) ||
+    "";
     const client =
         (order.get_partner && order.get_partner()) ||
         (order.get_client && order.get_client()) ||
@@ -182,10 +197,11 @@ export function buildPosPayload(order, pos) {
                     null,
             },
             currency: {
-                id: currency.id || 0,
-                name: currencyName,
-                symbol: currencySymbol,
-                position: currency.position || "before",
+            id: currency.id || 0,
+            name: currencyName,     // ahora debería venir lleno
+            symbol: currencySymbol,
+            position: currency.position || "before",
+            code: currencyCode || null, // opcional (útil si `name` es "Colón costarricense" y quieres "CRC")
             },
             dates: {
                 invoice_date: invoiceDateIso,
