@@ -4,6 +4,41 @@
 import { getCabysFromProduct } from "@clocky_accounting_integration/js/clocky_pos_helpers";
 
 /**
+ * Resuelve la moneda del POS de forma robusta.
+ * Busca primero en pos.currency y, si no hay name/display_name,
+ * hace fallback a company.currency_id[1], pricelist.currency_id[1] o config.currency_id[1].
+ */
+function resolvePosCurrency(pos) {
+    const p = pos || {};
+    const c = p.currency || {};
+
+    // nombre de moneda: intenta múltiples fuentes
+    const name =
+        (c.name && String(c.name)) ||
+        (c.display_name && String(c.display_name)) ||
+        (p.company && p.company.currency_id && p.company.currency_id[1]) ||
+        (p.pricelist && p.pricelist.currency_id && p.pricelist.currency_id[1]) ||
+        (p.config && p.config.currency_id && p.config.currency_id[1]) ||
+        null;
+
+    const symbol   = c.symbol || null;
+    const position = c.position || "before";
+    const id       = c.id || 0;
+
+    // Log diagnóstico (puedes comentar si no lo necesitas)
+    console.log("[Clocky POS] resolvePosCurrency()", {
+        hasPos: !!pos,
+        rawCurrency: c,
+        companyCurrency: p.company?.currency_id,
+        pricelistCurrency: p.pricelist?.currency_id,
+        configCurrency: p.config?.currency_id,
+        resolved: { id, name, symbol, position },
+    });
+
+    return { id, name, symbol, position };
+}
+
+/**
  * Construye el payload de la venta POS que se enviará a GAS,
  * y devuelve también datos útiles para el popup.
  */
@@ -16,25 +51,9 @@ export function buildPosPayload(order, pos) {
     const envPos = pos || {};
 
     // --- Datos generales / encabezado ---
-    const currency = (envPos && envPos.currency) ? envPos.currency : {};
-    const currencySymbol = currency.symbol || "";
-    const currencyName =
-    (currency.name && String(currency.name)) ||
-    (currency.display_name && String(currency.display_name)) ||
-    (envPos.company && envPos.company.currency_id && envPos.company.currency_id[1]) ||
-    (envPos.pricelist && envPos.pricelist.currency_id && envPos.pricelist.currency_id[1]) ||
-    "";
+    const { id: currencyId, name: currencyName, symbol: currencySymbol, position: currencyPosition } =
+        resolvePosCurrency(envPos);
 
-console.log("Currency Name:", currencyName);
-console.log("Currency from envPos.company:", envPos.company ? envPos.company.currency_id : null);
-console.log("Currency from envPos.pricelist:", envPos.pricelist ? envPos.pricelist.currency_id : null);
-console.log("Currency object:", currency);
-
-const currencyCode =
-    (currency.name && String(currency.name)) ||
-    (envPos.company && envPos.company.currency_id && envPos.company.currency_id[1]) ||
-    (envPos.pricelist && envPos.pricelist.currency_id && envPos.pricelist.currency_id[1]) ||
-    "";
     const client =
         (order.get_partner && order.get_partner()) ||
         (order.get_client && order.get_client()) ||
@@ -121,7 +140,7 @@ const currencyCode =
         }
         if (!taxesDisplay) {
             taxesDisplay = taxesAmount
-                ? `${currencySymbol} ${taxesAmount.toFixed(2)}`
+                ? `${currencySymbol || ""} ${taxesAmount.toFixed(2)}`
                 : "-";
         }
 
@@ -197,11 +216,10 @@ const currencyCode =
                     null,
             },
             currency: {
-            id: currency.id || 0,
-            name: currencyName,     // ahora debería venir lleno
-            symbol: currencySymbol,
-            position: currency.position || "before",
-            code: currencyCode || null, // opcional (útil si `name` es "Colón costarricense" y quieres "CRC")
+                id: currencyId || 0,
+                name: currencyName,                 // ← ahora viene completo por el fallback
+                symbol: currencySymbol || "",
+                position: currencyPosition || "before",
             },
             dates: {
                 invoice_date: invoiceDateIso,
@@ -275,8 +293,8 @@ const currencyCode =
             base,
             taxes,
             total,
-            currencySymbol,
-            currencyName,
+            currencySymbol: currencySymbol || "",
+            currencyName: currencyName || "",
         },
     };
 }
