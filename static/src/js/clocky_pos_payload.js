@@ -35,9 +35,9 @@ function resolvePosCurrency(pos) {
     const name =
         (c.name && String(c.name)) ||
         (c.display_name && String(c.display_name)) ||
-        m2oName(p.company && p.company.currency_id) ||
-        m2oName(p.pricelist && p.pricelist.currency_id) ||
-        m2oName(p.config && p.config.currency_id) ||
+        m2oName(p.company?.currency_id) ||
+        m2oName(p.pricelist?.currency_id) ||
+        m2oName(p.config?.currency_id) ||
         null;
 
     const symbol   = c.symbol || null;
@@ -68,14 +68,7 @@ export function buildPosPayload(order, pos) {
 
     const envPos = pos || {};
 
-
-
-
-
-
-
-
-      // ===== Datos de sucursal / punto de venta (Hacienda) =====
+    // ===== Datos de sucursal / punto de venta (Hacienda) =====
     const config = envPos.config || {};
 
     // Campo Studio: Código de sucursal
@@ -86,7 +79,7 @@ export function buildPosPayload(order, pos) {
             : ""
     ).padStart(3, "0"); // formato 3 dígitos ("004")
 
-    console.log("[Clocky POS] Sucursal:", sucursalRaw, "→", sucursal);
+    console.log("[Clocky POS] Sucursal (raw → formateado):", sucursalRaw, "→", sucursal);
 
     // Campo Studio: Código de punto de venta
     const puntoRaw = config.x_studio_codigo_de_punto_de_venta;
@@ -96,13 +89,14 @@ export function buildPosPayload(order, pos) {
             : ""
     ).padStart(5, "0"); // formato 5 dígitos ("00001")
 
-    console.log("[Clocky POS] Punto de venta:", puntoRaw, "→", punto);
+    console.log("[Clocky POS] Punto de venta (raw → formateado):", puntoRaw, "→", punto);
 
-
-console.log("Sucursal:", p.config.x_studio_codigo_de_sucursal_1);
-console.log("Punto:", p.config.x_studio_codigo_de_punto_de_venta);
-
-    
+    // ⚠️ AQUÍ estaba el error: p no existe en esta función.
+    // console.log("Sucursal:", p.config.x_studio_codigo_de_sucursal_1);
+    // console.log("Punto:", p.config.x_studio_codigo_de_punto_de_venta);
+    // ✅ Usamos config (o envPos.config):
+    console.log("[Clocky POS] config.x_studio_codigo_de_sucursal_1:", config.x_studio_codigo_de_sucursal_1);
+    console.log("[Clocky POS] config.x_studio_codigo_de_punto_de_venta:", config.x_studio_codigo_de_punto_de_venta);
 
     // --- Datos generales / encabezado ---
     const {
@@ -257,7 +251,7 @@ console.log("Punto:", p.config.x_studio_codigo_de_punto_de_venta);
     const company = envPos.company || {};
     const customer = client || {};
 
-  const payload = {
+    const payload = {
         // === NUEVOS CAMPOS PARA HACIENDA / GAS ===
         orden: orderName || order.uid || "",
         sucursal: sucursal,
