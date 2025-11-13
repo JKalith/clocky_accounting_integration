@@ -122,9 +122,32 @@ function showClockyOrderPopup(paymentScreen) {
     console.log("[Clocky POS] env.pos:", pos);
 
     // --- Datos generales / encabezado ---
-    const currency = pos.currency || {};
-    const currencySymbol = currency.symbol || "";
-    const currencyName = currency.name || "";
+
+    // --- Moneda segura para POS ---
+    // 1) Si pos.currency existe lo usamos
+    // 2) Si está vacío, leemos pos.config.currency_id o pos.company.currency_id
+    const posCurrency = (
+        pos.currency && pos.currency.id
+    ) ? pos.currency : {
+        id:
+            (pos.config?.currency_id?.[0]) ||
+            (pos.company?.currency_id?.[0]) ||
+            0,
+        name:
+            (pos.config?.currency_id?.[1]) ||
+            (pos.company?.currency_id?.[1]) ||
+            null,
+        symbol:
+            (pos.currency?.symbol) ||
+            (
+                (pos.config?.currency_id?.[1] === "CRC") ? "₡"
+                : (pos.config?.currency_id?.[1] || "")
+            ),
+        position: "before",
+    };
+
+    const currencySymbol = posCurrency.symbol || "";
+    const currencyName = posCurrency.name || "";
 
     const client =
         (order.get_partner && order.get_partner()) ||
