@@ -1,265 +1,175 @@
 /** @odoo-module **/
 
+// clocky_pos_payment_patch.js
 import { patch } from "@web/core/utils/patch";
 import { PaymentScreen } from "@point_of_sale/app/screens/payment_screen/payment_screen";
 
-/** CABYS helper */
-function getCabysFromProduct(product) {
-    if (!product) return "";
-    return (
-        product.cabys ||
-        product.l10n_cr_cabys ||
-        product.cabys_code ||
-        product.x_cabys ||
-        ""
-    );
-}
+import { buildPosPayload } from "@clocky_accounting_integration/js/clocky_pos_payload";
+import { sendPosOrderToGas } from "@clocky_accounting_integration/js/clocky_pos_gas_service";
 
-/** Enviar a GAS vía servidor Odoo */
-async function sendPosOrderToGas(payload, paymentScreen) {
-    const orm =
-        paymentScreen.orm ||
-        (paymentScreen.env && paymentScreen.env.services.orm);
+// Guardamos referencia al método original
+const _superValidateOrder = PaymentScreen.prototype.validateOrder;
 
-    if (!orm) {
-        console.error("[Clocky POS] No se encontró ORM");
-        return { ok: false, error: "No ORM" };
-    }
-
-    try {
-        return await orm.call(
-            "clocky.pos.integration",
-            "clocky_pos_post_to_gas",
-            [payload]
-        );
-    } catch (e) {
-        console.error("[Clocky POS] Error RPC:", e);
-        return { ok: false, error: e };
-    }
-}
-
-/** MOSTRAR POPUP + CONSTRUIR PAYLOAD */
 function showClockyOrderPopup(paymentScreen) {
     const order = paymentScreen.currentOrder;
-    const pos = paymentScreen.env.pos;
-
     if (!order) return;
 
-    /* ===============================
-     *       MONEDA CORREGIDA
-     * =============================== */
-    const posCurrency = (pos.currency && pos.currency.id)
-        ? pos.currency
-        : {
-              id:
-                  (pos.config.currency_id && pos.config.currency_id[0]) ||
-                  (pos.company.currency_id && pos.company.currency_id[0]) ||
-                  0,
-              name:
-                  (pos.config.currency_id && pos.config.currency_id[1]) ||
-                  (pos.company.currency_id && pos.company.currency_id[1]) ||
-                  null,
-              symbol:
-                  (pos.currency && pos.currency.symbol) ||
-                  (
-                      (pos.config.currency_id &&
-                          pos.config.currency_id[1] === "CRC")
-                          ? "₡"
-                          : (pos.config.currency_id &&
-                                pos.config.currency_id[1]) || ""
-                  ),
-              position: "before",
-          };
+    const pos = paymentScreen.env.pos || {};
 
-    const currencySymbol = posCurrency.symbol || "";
-    const currencyName = posCurrency.name || "";
+    console.log("[Clocky POS] showClockyOrderPopup() llamado");
 
-    /* ===============================
-     *        CONDICIÓN DE PAGO
-     * =============================== */
-    // POS es contado → Hacienda código "01"
-    const paymentConditionCode = "01";
+    const built = buildPosPayload(order, pos);
+    if (!built) {
+        console.error("[Clocky POS] buildPosPayload() devolvió null");
+        return;
+    }
 
-    const paymentLines = order.get_paymentlines();
-    const paymentMethods = paymentLines.map((l) => l.payment_method.name);
+    const { payload, ui } = built;
+    const {
+        orderName,
+        clientName,
+        journalName,
+        invoiceDateStr,
+        invoiceDateDueStr,
+        stateLabel,
+        base,
+        taxes,
+        total,
+        currencySymbol,
+        currencyName,
+    } = ui;
 
-    const paymentInfo = {
-        condition: paymentConditionCode,
-        term_days: 0,
-        methods: paymentMethods,
-    };
+    console.log("[Clocky POS] Payload final para Odoo (proxy GAS):", payload);
 
-    /* ===============================
-     *       TOTALES Y CLIENTE
-     * =============================== */
-    const client = order.get_partner() || null;
-    const clientName = client ? client.name : "Cliente mostrador";
+    // Disparar el envío (no bloqueamos la UI)
+    try {
+        void sendPosOrderToGas(payload, paymentScreen);
+    } catch (e) {
+        console.error("[Clocky POS] Error inesperado al invocar sendPosOrderToGas:", e);
+    }
 
-    const base = order.get_total_without_tax();
-    const total = order.get_total_with_tax();
-    const taxes = total - base;
-
-    const orderLines = order.get_orderlines();
-
+    // Construimos el HTML de las líneas a partir del payload
+    const lines = payload.invoice.lines || [];
     let linesHtml = "";
-    const linesPayload = [];
 
-    orderLines.forEach((line, index) => {
-        const product = line.get_product();
-        const productName = product.display_name || product.name;
-        const qty = line.get_quantity();
-        const unitPrice = line.get_unit_price();
-        const priceWithoutTax = line.get_price_without_tax();
-        const priceWithTax = line.get_price_with_tax();
-        const discount = line.get_discount();
-        const taxesAmount = priceWithTax - priceWithoutTax;
-
-        const cabys = getCabysFromProduct(product);
-
-        const linePayload = {
-            id: line.id || index,
-            product: {
-                id: product.id,
-                name: productName,
-                default_code: product.default_code || null,
-            },
-            description: productName,
-            quantity: qty,
-            uom_name: line.get_unit().name,
-            uom_code: line.get_unit().id,
-            price_unit: unitPrice,
-            discount: discount,
-            cabys: cabys || null,
-            taxes_display: taxesAmount
-                ? [`${currencySymbol} ${taxesAmount.toFixed(2)}`]
-                : [],
-            subtotal: priceWithoutTax,
-            total: priceWithTax,
-        };
-
-        linesPayload.push(linePayload);
+    lines.forEach((l) => {
+        const productName = l.description || "";
+        const qty = l.quantity || 0;
+        const unitPrice = l.price_unit || 0;
+        const discount = l.discount || 0;
+        const taxesDisplay =
+            (Array.isArray(l.taxes_display) && l.taxes_display[0]) || "-";
+        const cabysCode = l.cabys || "";
+        const subtotal = l.subtotal || 0;
+        const totalLine = l.total || 0;
 
         linesHtml += `
             <tr>
-                <td>${productName}</td>
-                <td style="text-align:right">${qty}</td>
-                <td style="text-align:right">${currencySymbol} ${unitPrice.toFixed(2)}</td>
-                <td style="text-align:right">${discount ? discount + "%" : "0%"}</td>
-                <td>${currencySymbol} ${taxesAmount.toFixed(2)}</td>
-                <td>${cabys || ""}</td>
-                <td style="text-align:right">${currencySymbol} ${priceWithoutTax.toFixed(2)}</td>
-                <td style="text-align:right">${currencySymbol} ${priceWithTax.toFixed(2)}</td>
+                <td style="padding: 4px 2px;">${productName}</td>
+                <td style="padding: 4px 2px; text-align: right;">${qty}</td>
+                <td style="padding: 4px 2px; text-align: right;">
+                    ${currencySymbol} ${unitPrice.toFixed(2)}
+                </td>
+                <td style="padding: 4px 2px; text-align: right;">
+                    ${discount ? discount.toFixed(2) + "%" : "0%"}
+                </td>
+                <td style="padding: 4px 2px;">${taxesDisplay}</td>
+                <td style="padding: 4px 2px;">${cabysCode}</td>
+                <td style="padding: 4px 2px; text-align: right;">
+                    ${currencySymbol} ${subtotal.toFixed(2)}
+                </td>
+                <td style="padding: 4px 2px; text-align: right;">
+                    ${currencySymbol} ${totalLine.toFixed(2)}
+                </td>
             </tr>
         `;
     });
 
-    /* ===============================
-     *            PAYLOAD
-     * =============================== */
-    const payload = {
-        invoice: {
-            id: order.uid,
-            move_type: "out_invoice",
-            name: order.name,
-            state: "posted",
-            journal: {
-                id: pos.config.journal_id[0],
-                name: pos.config.journal_id[1],
-                code: pos.config.journal_id[1],
-            },
-            currency: {
-                id: posCurrency.id,
-                name: currencyName,
-                symbol: currencySymbol,
-                position: posCurrency.position,
-            },
-            dates: {
-                invoice_date: new Date().toISOString().slice(0, 10),
-                invoice_date_due: null,
-            },
-            company: {
-                id: pos.company.id,
-                name: pos.company.name,
-                vat: pos.company.vat,
-                email: pos.company.email,
-                phone: pos.company.phone,
-            },
-            customer: {
-                id: client ? client.id : 0,
-                name: clientName,
-                vat: client ? client.vat : "",
-                email: client ? client.email : "",
-                phone: client ? client.phone : "",
-            },
-            amounts: {
-                untaxed: base,
-                tax: taxes,
-                total: total,
-            },
-            payment: paymentInfo,
-            lines: linesPayload,
-            meta: {
-                source: "odoo_pos",
-                version: "1.0",
-            },
-        },
-    };
+    if (!linesHtml) {
+        linesHtml = `
+            <tr>
+                <td colspan="8" style="padding: 6px; text-align:center; color:#777;">
+                    Sin líneas
+                </td>
+            </tr>
+        `;
+    }
 
-    // Enviar sin bloquear
-    void sendPosOrderToGas(payload, paymentScreen);
-
-    /* ===============================
-     *           POPUP
-     * =============================== */
-
+    // --- Overlay oscuro ---
     const overlay = document.createElement("div");
-    overlay.style = `
-        position:fixed; inset:0; background:rgba(0,0,0,.4);
-        display:flex; justify-content:center; align-items:center;
-        z-index:9999
-    `;
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.background = "rgba(0, 0, 0, 0.4)";
+    overlay.style.zIndex = "9999";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
 
+    // --- Caja principal ---
     const box = document.createElement("div");
-    box.style = `
-        background:white; padding:18px 22px; border-radius:6px;
-        min-width:780px; max-width:1080px; max-height:80vh; overflow:auto;
-    `;
+    box.style.background = "#ffffff";
+    box.style.borderRadius = "6px";
+    box.style.padding = "18px 22px";
+    box.style.minWidth = "780px";
+    box.style.maxWidth = "1080px";
+    box.style.maxHeight = "80vh";
+    box.style.overflow = "auto";
+    box.style.boxShadow = "0 0 15px rgba(0, 0, 0, 0.25)";
 
     box.innerHTML = `
-        <h2>Resumen de venta</h2>
+        <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px;">
+            <h2 style="margin:0; font-size:18px;">Resumen de la venta (POS)</h2>
+            <span style="font-size:12px; color:#777;">
+                POS · Pedido ${orderName}
+            </span>
+        </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;">
-            <div><strong>Consecutivo:</strong> ${order.name}</div>
+        <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:4px 24px; margin-bottom: 10px;">
+            <div><strong>Consecutivo:</strong> ${orderName}</div>
             <div><strong>Base imponible:</strong> ${currencySymbol} ${base.toFixed(2)}</div>
 
             <div><strong>Cliente:</strong> ${clientName}</div>
             <div><strong>Impuestos:</strong> ${currencySymbol} ${taxes.toFixed(2)}</div>
 
-            <div><strong>Moneda:</strong> ${currencyName}</div>
-            <div><strong>Condición pago:</strong> ${paymentConditionCode}</div>
-
+            <div><strong>Diario:</strong> ${journalName}</div>
             <div><strong>Total:</strong> ${currencySymbol} ${total.toFixed(2)}</div>
+
+            <div><strong>Moneda:</strong> ${currencyName}</div>
+            <div><strong>Estado:</strong> ${stateLabel}</div>
+
+            <div><strong>Fecha de factura:</strong> ${invoiceDateStr}</div>
+            <div><strong>Fecha de vencimiento:</strong> ${invoiceDateDueStr}</div>
         </div>
 
-        <table style="width:100%; margin-top:15px; border-collapse:collapse">
+        <table style="width:100%; border-collapse: collapse; margin-bottom: 16px;">
             <thead>
                 <tr>
-                    <th>Producto</th>
-                    <th>Cant</th>
-                    <th>Precio</th>
-                    <th>Desc</th>
-                    <th>Imp</th>
-                    <th>CABYS</th>
-                    <th>Sub</th>
-                    <th>Total</th>
+                    <th style="text-align:left; padding:4px 2px; border-bottom:1px solid #ddd;">Producto/Descripción</th>
+                    <th style="text-align:right; padding:4px 2px; border-bottom:1px solid #ddd;">Cantidad</th>
+                    <th style="text-align:right; padding:4px 2px; border-bottom:1px solid #ddd;">Precio</th>
+                    <th style="text-align:right; padding:4px 2px; border-bottom:1px solid #ddd;">Desc.</th>
+                    <th style="text-align:left; padding:4px 2px; border-bottom:1px solid #ddd;">Impuestos</th>
+                    <th style="text-align:left; padding:4px 2px; border-bottom:1px solid #ddd;">CABYS</th>
+                    <th style="text-align:right; padding:4px 2px; border-bottom:1px solid #ddd;">Subtotal</th>
+                    <th style="text-align:right; padding:4px 2px; border-bottom:1px solid #ddd;">Total</th>
                 </tr>
             </thead>
-            <tbody>${linesHtml}</tbody>
+            <tbody>
+                ${linesHtml}
+            </tbody>
         </table>
 
-        <div style="text-align:right; margin-top:15px;">
-            <button id="clocky-close-popup"
-                style="background:#875A7B;color:white;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;">
+        <div style="text-align: right; margin-top: 10px;">
+            <button id="clocky-pos-popup-close"
+                style="
+                    padding: 6px 16px;
+                    border: none;
+                    border-radius: 4px;
+                    background: #875A7B;
+                    color: #ffffff;
+                    cursor: pointer;
+                    font-size: 13px;
+                ">
                 Cerrar
             </button>
         </div>
@@ -268,13 +178,35 @@ function showClockyOrderPopup(paymentScreen) {
     overlay.appendChild(box);
     document.body.appendChild(overlay);
 
-    box.querySelector("#clocky-close-popup").onclick = () => overlay.remove();
+    const btnClose = box.querySelector("#clocky-pos-popup-close");
+    if (btnClose) {
+        btnClose.addEventListener("click", () => {
+            if (overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+        });
+    }
 }
 
-/** PATCH PAYMENT SCREEN */
+// ==================== PATCH PaymentScreen ====================
+
 patch(PaymentScreen.prototype, {
     async validateOrder(isForceValidate) {
-        await super.validateOrder(isForceValidate);
+        console.log("[Clocky POS] validateOrder() (parche Clocky) :: inicio", {
+            isForceValidate,
+        });
+
+        // 1) Llamar al flujo normal de Odoo
+        const res = await _superValidateOrder.call(this, isForceValidate);
+
+        console.log(
+            "[Clocky POS] validateOrder() :: después de _super, currentOrder:",
+            this.currentOrder
+        );
+
+        // 2) Mostrar popup con el payload de la orden
         showClockyOrderPopup(this);
+
+        return res;   // importante devolver el resultado
     },
 });

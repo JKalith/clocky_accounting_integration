@@ -28,14 +28,6 @@ function getCabysFromProduct(product) {
 }
 
 /**
- * Envía el payload de la venta de POS al servidor de Odoo,
- * y en el servidor se reenvía al Web App de Google Apps Script (GAS).
- *
- * Ya NO hacemos fetch() directo a script.google.com para evitar errores CORS.
- * En su lugar, usamos un método del modelo `clocky.pos.integration`
- * (método Python: clocky_pos_post_to_gas) vía RPC.
- */
-/**
  * Envía el payload de la venta de POS al Web App de GAS a través del servidor Odoo.
  * Llama al modelo Python clocky.pos.integration y su método clocky_pos_post_to_gas.
  */
@@ -61,16 +53,6 @@ async function sendPosOrderToGas(payload, paymentScreen) {
     try {
         console.log("[Clocky POS] Llamando a modelo 'clocky.pos.integration' :: método 'clocky_pos_post_to_gas' vía RPC...");
 
-        /**
-         * En Python debes tener algo como:
-         *
-         * class ClockyPosIntegration(models.Model):
-         *     _name = "clocky.pos.integration"
-         *
-         *     @api.model
-         *     def clocky_pos_post_to_gas(self, payload):
-         *         # hacer POST a GAS y devolver dict {ok: True/False, ...}
-         */
         const result = await orm.call(
             "clocky.pos.integration",    // modelo
             "clocky_pos_post_to_gas",    // método Python
@@ -120,8 +102,6 @@ function showClockyOrderPopup(paymentScreen) {
     console.log("[Clocky POS] showClockyOrderPopup() llamado");
     console.log("[Clocky POS] currentOrder:", order);
     console.log("[Clocky POS] env.pos:", pos);
-
-    // --- Datos generales / encabezado ---
 
     // --- Moneda segura para POS ---
     // 1) Si pos.currency existe lo usamos
@@ -336,7 +316,7 @@ function showClockyOrderPopup(paymentScreen) {
     });
 
     const paymentInfo = {
-        condition: "POS",
+        condition: "POS",   // si luego quieres "01" (contado Hacienda), cambias aquí
         term_days: 0,
         methods: paymentMethods,
     };
@@ -363,11 +343,12 @@ function showClockyOrderPopup(paymentScreen) {
                         pos.config.journal_id[1]) ||
                     null,
             },
+            // 👇 AQUÍ USAMOS posCurrency (antes usaba una variable "currency" que no existía)
             currency: {
-                id: currency.id || 0,
+                id: posCurrency.id || 0,
                 name: currencyName,
                 symbol: currencySymbol,
-                position: currency.position || "before",
+                position: posCurrency.position || "before",
             },
             dates: {
                 invoice_date: invoiceDate.toISOString().slice(0, 10),
