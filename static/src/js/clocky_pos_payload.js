@@ -4,28 +4,46 @@
 import { getCabysFromProduct } from "@clocky_accounting_integration/js/clocky_pos_helpers";
 
 /**
+ * Devuelve el nombre de un many2one tanto si viene como [id, "name"]
+ * como si viene como {id, name, display_name}.
+ */
+function m2oName(m2o) {
+    if (!m2o) return null;
+
+    // Formato clásico [id, "Nombre"]
+    if (Array.isArray(m2o)) {
+        return m2o[1] || null;
+    }
+
+    // Formato objeto {id, name, display_name}
+    if (typeof m2o === "object") {
+        return m2o.display_name || m2o.name || null;
+    }
+
+    return null;
+}
+
+/**
  * Resuelve la moneda del POS de forma robusta.
  * Busca primero en pos.currency y, si no hay name/display_name,
- * hace fallback a company.currency_id[1], pricelist.currency_id[1] o config.currency_id[1].
+ * hace fallback a company.currency_id, pricelist.currency_id o config.currency_id.
  */
 function resolvePosCurrency(pos) {
     const p = pos || {};
     const c = p.currency || {};
 
-    // nombre de moneda: intenta múltiples fuentes
     const name =
         (c.name && String(c.name)) ||
         (c.display_name && String(c.display_name)) ||
-        (p.company && p.company.currency_id && p.company.currency_id[1]) ||
-        (p.pricelist && p.pricelist.currency_id && p.pricelist.currency_id[1]) ||
-        (p.config && p.config.currency_id && p.config.currency_id[1]) ||
+        m2oName(p.company && p.company.currency_id) ||
+        m2oName(p.pricelist && p.pricelist.currency_id) ||
+        m2oName(p.config && p.config.currency_id) ||
         null;
 
     const symbol   = c.symbol || null;
     const position = c.position || "before";
     const id       = c.id || 0;
 
-    // Log diagnóstico (puedes comentar si no lo necesitas)
     console.log("[Clocky POS] resolvePosCurrency()", {
         hasPos: !!pos,
         rawCurrency: c,
@@ -51,18 +69,23 @@ export function buildPosPayload(order, pos) {
     const envPos = pos || {};
 
     // --- Datos generales / encabezado ---
-    const { id: currencyId, name: currencyName, symbol: currencySymbol, position: currencyPosition } =
-        resolvePosCurrency(envPos);
+    const {
+        id: currencyId,
+        name: currencyName,
+        symbol: currencySymbol,
+        position: currencyPosition,
+    } = resolvePosCurrency(envPos);
 
     const client =
         (order.get_partner && order.get_partner()) ||
         (order.get_client && order.get_client()) ||
         null;
+
     const clientName = client ? client.name : "Cliente mostrador";
 
     const orderName = order.name || "";
     const journalName =
-        (envPos.config && envPos.config.journal_id && envPos.config.journal_id[1]) ||
+        (envPos.config && envPos.config.journal_id && m2oName(envPos.config.journal_id)) ||
         (envPos.config && envPos.config.name) ||
         "POS";
 
@@ -80,7 +103,7 @@ export function buildPosPayload(order, pos) {
     const invoiceDateStr = invoiceDate.toLocaleDateString();
     const invoiceDateIso = invoiceDate.toISOString().slice(0, 10);
 
-    // En POS normalmente no hay vencimiento
+    // En POS normalmente no hay vencimiento real
     const invoiceDateDueStr = "-";
 
     // Estado simulado
@@ -111,7 +134,9 @@ export function buildPosPayload(order, pos) {
             ? line.get_unit_price()
             : line.price || 0;
 
-        const discount = line.get_discount ? line.get_discount() : line.discount || 0;
+        const discount = line.get_discount
+            ? line.get_discount()
+            : line.discount || 0;
 
         const priceWithoutTax = line.get_price_without_tax
             ? line.get_price_without_tax()
@@ -206,18 +231,20 @@ export function buildPosPayload(order, pos) {
                 id:
                     (envPos.config &&
                         envPos.config.journal_id &&
-                        envPos.config.journal_id[0]) ||
+                        (Array.isArray(envPos.config.journal_id)
+                            ? envPos.config.journal_id[0]
+                            : envPos.config.journal_id.id)) ||
                     0,
                 name: journalName,
                 code:
                     (envPos.config &&
                         envPos.config.journal_id &&
-                        envPos.config.journal_id[1]) ||
+                        m2oName(envPos.config.journal_id)) ||
                     null,
             },
             currency: {
                 id: currencyId || 0,
-                name: currencyName,                 // ← ahora viene completo por el fallback
+                name: currencyName,
                 symbol: currencySymbol || "",
                 position: currencyPosition || "before",
             },
@@ -233,12 +260,12 @@ export function buildPosPayload(order, pos) {
                 phone: company.phone || company.mobile || null,
                 address: {
                     country:
-                        company.country_id && company.country_id[1]
-                            ? company.country_id[1]
+                        company.country_id && m2oName(company.country_id)
+                            ? m2oName(company.country_id)
                             : null,
                     state:
-                        company.state_id && company.state_id[1]
-                            ? company.state_id[1]
+                        company.state_id && m2oName(company.state_id)
+                            ? m2oName(company.state_id)
                             : null,
                     city: company.city || null,
                     street: company.street || null,
@@ -254,12 +281,12 @@ export function buildPosPayload(order, pos) {
                 phone: customer.phone || customer.mobile || null,
                 address: {
                     country:
-                        customer.country_id && customer.country_id[1]
-                            ? customer.country_id[1]
+                        customer.country_id && m2oName(customer.country_id)
+                            ? m2oName(customer.country_id)
                             : null,
                     state:
-                        customer.state_id && customer.state_id[1]
-                            ? customer.state_id[1]
+                        customer.state_id && m2oName(customer.state_id)
+                            ? m2oName(customer.state_id)
                             : null,
                     city: customer.city || null,
                     street: customer.street || null,

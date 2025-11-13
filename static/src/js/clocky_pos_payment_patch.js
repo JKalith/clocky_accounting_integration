@@ -7,16 +7,23 @@ import { PaymentScreen } from "@point_of_sale/app/screens/payment_screen/payment
 import { buildPosPayload } from "@clocky_accounting_integration/js/clocky_pos_payload";
 import { sendPosOrderToGas } from "@clocky_accounting_integration/js/clocky_pos_gas_service";
 
-// Guardamos referencia al método original
+// Guardamos referencia al método original ANTES del patch
 const _superValidateOrder = PaymentScreen.prototype.validateOrder;
 
 function showClockyOrderPopup(paymentScreen) {
     const order = paymentScreen.currentOrder;
-    if (!order) return;
+    if (!order) {
+        console.warn("[Clocky POS] showClockyOrderPopup(): no hay currentOrder");
+        return;
+    }
 
-    const pos = paymentScreen.env.pos || {};
 
-    console.log("[Clocky POS] showClockyOrderPopup() llamado");
+    const pos =
+        (paymentScreen.env && paymentScreen.env.services && paymentScreen.env.services.pos) ||
+        paymentScreen.env.pos || // fallback por si acaso
+        {};
+
+    console.log("[Clocky POS] showClockyOrderPopup() llamado, POS:", pos);
 
     const built = buildPosPayload(order, pos);
     if (!built) {
@@ -40,6 +47,10 @@ function showClockyOrderPopup(paymentScreen) {
     } = ui;
 
     console.log("[Clocky POS] Payload final para Odoo (proxy GAS):", payload);
+    console.log("[Clocky POS] Moneda resuelta:", {
+        currencyName,
+        currencySymbol,
+    });
 
     // Disparar el envío (no bloqueamos la UI)
     try {
@@ -207,6 +218,7 @@ patch(PaymentScreen.prototype, {
         // 2) Mostrar popup con el payload de la orden
         showClockyOrderPopup(this);
 
-        return res;   // importante devolver el resultado
+        // 3) Devolver el resultado original
+        return res;
     },
 });
