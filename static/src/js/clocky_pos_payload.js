@@ -68,6 +68,42 @@ export function buildPosPayload(order, pos) {
 
     const envPos = pos || {};
 
+
+
+
+
+
+
+
+      // ===== Datos de sucursal / punto de venta (Hacienda) =====
+    const config = envPos.config || {};
+
+    // Campo Studio: Código de sucursal
+    const sucursalRaw = config.x_studio_codigo_de_sucursal_1;
+    const sucursal = (
+        sucursalRaw !== undefined && sucursalRaw !== null
+            ? String(sucursalRaw).replace(/\D/g, "")  // quitar puntos o comas
+            : ""
+    ).padStart(3, "0"); // formato 3 dígitos ("004")
+
+    console.log("[Clocky POS] Sucursal:", sucursalRaw, "→", sucursal);
+
+    // Campo Studio: Código de punto de venta
+    const puntoRaw = config.x_studio_codigo_de_punto_de_venta;
+    const punto = (
+        puntoRaw !== undefined && puntoRaw !== null
+            ? String(puntoRaw).replace(/\D/g, "")  // limpiar formato
+            : ""
+    ).padStart(5, "0"); // formato 5 dígitos ("00001")
+
+    console.log("[Clocky POS] Punto de venta:", puntoRaw, "→", punto);
+
+
+console.log("Sucursal:", p.config.x_studio_codigo_de_sucursal_1);
+console.log("Punto:", p.config.x_studio_codigo_de_punto_de_venta);
+
+    
+
     // --- Datos generales / encabezado ---
     const {
         id: currencyId,
@@ -221,7 +257,13 @@ export function buildPosPayload(order, pos) {
     const company = envPos.company || {};
     const customer = client || {};
 
-    const payload = {
+  const payload = {
+        // === NUEVOS CAMPOS PARA HACIENDA / GAS ===
+        orden: orderName || order.uid || "",
+        sucursal: sucursal,
+        punto: punto,
+
+        // === Todo lo que ya tenías ===
         invoice: {
             id: order.uid || null,
             move_type: "out_invoice",
